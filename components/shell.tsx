@@ -20,6 +20,8 @@ export function TopBar({ lang, setLang, active, status, showNetwork = true }: { 
       <Link href={`/${q}`} className="brand" aria-label="Relic Desk home"><span className="brand-mark"><Icon name="brand" size={29} /></span><span className="brand-wordmark">RELIC<span>DESK</span></span><span className="brand-tag">WEB3</span></Link>
       <nav className="nav" aria-label={lang === "zh" ? "主导航" : "Main"}>
         {NAV.map(([href, label], i) => <Link key={href} href={`${href}${q}`} aria-current={href === active ? "page" : undefined}><Icon name={i === 0 ? "chart" : i === 1 ? "layers" : "swap"} size={17} />{label[lang]}</Link>)}
+        <a className="nav-social" href={SOCIAL_LINKS.x} target="_blank" rel="noopener noreferrer" aria-label={lang === "zh" ? "X（推特）" : "X (Twitter)"}><Icon name="x" size={16} />{lang === "zh" ? "推特" : "X (Twitter)"}</a>
+        <a className="nav-social" href={SOCIAL_LINKS.github} target="_blank" rel="noopener noreferrer"><Icon name="github" size={17} />GitHub</a>
       </nav>
       <div className="status">
         <button className="btn ghost sm lang" onClick={() => setLang(lang === "zh" ? "en" : "zh")} aria-label={lang === "zh" ? "Switch to English" : "切换到中文"}><Icon name="globe" size={16} />{lang === "zh" ? "EN" : "中文"}</button>

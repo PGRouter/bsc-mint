@@ -27,3 +27,5 @@ th { color: var(--muted); text-align: left; font-weight: 500; padding: 3px 4px; 
 .chip { border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font-size: 12px; color: var(--text); }
 .chip.bad, .err { color: var(--red); border-color: var(--red); font-size: 12px; }
 nav a { margin-right: 12px; font-size: 13px; }
+.txstatus { margin-top: 10px; font-size: 13px; }
+.panel p { margin: 6px 0; }

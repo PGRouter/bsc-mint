@@ -166,7 +166,7 @@ export class Indexer {
   static klines(sec: number, asset: Asset, limit: number) {
     const buckets = new Map<number, { t: number; o: number; h: number; l: number; c: number; v: number; n: number }>();
     for (const f of Indexer.s.fills) {
-      if (f.asset !== asset) continue;
+      if (f.asset !== asset || f.price < Indexer.DUST_PRICE_USDT) continue;
       const t = Math.floor(f.ts / (sec * 1000)) * sec * 1000;
       const k = buckets.get(t);
       if (!k) buckets.set(t, { t, o: f.price, h: f.price, l: f.price, c: f.price, v: f.price, n: 1 });

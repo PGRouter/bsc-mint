@@ -1,12 +1,13 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatUnits, parseUnits, type Address } from "viem";
+import { formatUnits, parseUnits, type Address, type Abi } from "viem";
 import { usePublicClient, useReadContracts, useWalletClient } from "wagmi";
 import { Shell, type Lang } from "@/components/shell";
 import { TxStatus, useTx } from "@/components/tx";
 import { useWalletGate } from "@/components/wallet";
 import { Contracts } from "@/lib/contracts";
 import { Fmt } from "@/lib/fmt";
+import { PLATFORM_FEE_ABI, PLATFORM_FEE_RECIPIENT, platformFeeRouterAddress, platformFeeStartBlock, readSellerQuote, readNftSaleState, sameSellerQuote, type SellerQuote } from "@/lib/platform-fee";
 import { TableState } from "@/components/ui";
 import { Icon } from "@/components/icons";
 
@@ -33,6 +34,15 @@ function Trade({ lang }: { lang: Lang }) {
   const [sellBid, setSellBid] = useState<Row>();
   const [tokenId, setTokenId] = useState("");
   const [side, setSide] = useState<"buy" | "sell">("buy");
+  const [sale, setSale] = useState<{ context: object; quote: SellerQuote; approved: boolean; at: number }>();
+  const [saleError, setSaleError] = useState("");
+  const saleContext = useRef<{ asset: Asset; address?: Address; bidId?: number; tokenId: string; ok: boolean; walletChain?: number; walletId?: string; active: boolean }>({ asset, address, tokenId, ok, active: true });
+  const currentSale = saleContext.current;
+  if (currentSale.asset !== asset || currentSale.address !== address || currentSale.bidId !== sellBid?.id || currentSale.tokenId !== tokenId || currentSale.ok !== ok || currentSale.walletChain !== wallet?.chain?.id || currentSale.walletId !== wallet?.uid) {
+    currentSale.active = false;
+    saleContext.current = { asset, address, bidId: sellBid?.id, tokenId, ok, walletChain: wallet?.chain?.id, walletId: wallet?.uid, active: true };
+  }
+  const invalidateSale = () => { saleContext.current.active = false; setSale(undefined); setSaleError(""); };
   const activeView = useRef<SnapshotContext>({ asset, address, active: true });
   const nft: Address = asset === "relic" ? Contracts.relic : Contracts.loom;
 
@@ -60,7 +70,7 @@ function Trade({ lang }: { lang: Lang }) {
     const context = activeView.current;
     context.active = true;
     load();
-    const id = setInterval(load, 5000);
+    const id = setInterval(load, 2000);
     return () => {
       clearInterval(id);
       context.active = false;
@@ -71,15 +81,40 @@ function Trade({ lang }: { lang: Lang }) {
 
   let cost: bigint | undefined;
   try { cost = parseUnits(price || "0", 18) * BigInt(Math.max(0, Math.floor(Number(qty) || 0))); } catch { cost = undefined; }
+  const selectedBidId = sellBid?.id;
   const tid = /^\d+$/.test(tokenId) ? BigInt(tokenId) : undefined;
   const acct = address ?? "0x0000000000000000000000000000000000000000";
   const { data, refetch } = useReadContracts({ allowFailure: true, contracts: [
     { address: Contracts.usdt, abi: Contracts.erc20Abi, functionName: "allowance", args: [acct, Contracts.market] },
-    { address: nft, abi: Contracts.nftApproveAbi, functionName: "getApproved", args: [tid ?? 0n] },
-    { address: nft, abi: Contracts.nftApproveAbi, functionName: "isApprovedForAll", args: [acct, Contracts.market] },
   ], query: { refetchInterval: 4000 } });
   const allowance = data?.[0]?.result as bigint | undefined;
-  const nftApproved = (data?.[1]?.result as string | undefined)?.toLowerCase() === Contracts.market.toLowerCase() || data?.[2]?.result === true;
+  const readySale = sale?.context === saleContext.current && saleContext.current.active && Date.now() - sale.at <= 15000 ? sale : undefined;
+  const nftApproved = readySale?.approved === true;
+  const saleQuote = readySale?.quote;
+  useEffect(() => {
+    const context = saleContext.current;
+    let inFlight = false;
+    let live = true;
+    context.active = true;
+    const refresh = async () => {
+      if (inFlight || !live || !context.active || !ok || !pc || !address || tid === undefined || selectedBidId === undefined || wallet?.chain?.id !== 56 || (typeof document !== "undefined" && document.visibilityState === "hidden")) return;
+      inFlight = true;
+      try {
+        const router = platformFeeRouterAddress();
+        if (router && !platformFeeStartBlock()) throw new Error("Platform router deployment block is missing");
+        const quote = await readSellerQuote(pc, { router, bidId: BigInt(selectedBidId), asset: asset === "relic" ? 0 : 1, seller: address });
+        const state = await readNftSaleState(pc, nft, tid, address, quote.spender);
+        if (!live || saleContext.current !== context || !context.active) return;
+        setSale({ context, quote, approved: state.approved, at: Date.now() }); setSaleError("");
+      } catch {
+        if (!live || saleContext.current !== context || !context.active) return;
+        setSale(undefined); setSaleError(lang === "zh" ? "卖出核验失败，请检查网络、订单、NFT 所有权及结算合约配置。" : "Sale verification failed. Check network, bid, NFT ownership and router configuration.");
+      } finally { inFlight = false; }
+    };
+    refresh();
+    const timer = setInterval(refresh, 2000);
+    return () => { live = false; clearInterval(timer); context.active = false; };
+  }, [address, ok, asset, selectedBidId, tokenId, pc, wallet?.chain?.id, wallet?.uid, lang, nft, tid]);
   const onDone = useCallback(() => { refetch(); setTimeout(load, 4500); }, [refetch, load]);
   const tx = useTx(onDone);
   const can = ok && !!wallet && !!address && !tx.busy;
@@ -91,6 +126,7 @@ function Trade({ lang }: { lang: Lang }) {
     activeView.current = { asset: next, address, active: true };
     previous.active = false;
     previous.request?.abort();
+    invalidateSale();
     setAsset(next);
     setView(undefined);
     setSync(undefined);
@@ -98,10 +134,44 @@ function Trade({ lang }: { lang: Lang }) {
     setTokenId("");
   };
 
-  const write = (name: string, address_: Address, abi: typeof Contracts.marketWriteAbi | typeof Contracts.erc20Abi | typeof Contracts.nftApproveAbi, functionName: string, args: readonly unknown[]) =>
+  const write = (name: string, address_: Address, abi: Abi, functionName: string, args: readonly unknown[]) =>
     tx.run(name,
       () => pc!.simulateContract({ account: a, address: address_, abi, functionName, args } as never),
       () => wallet!.writeContract({ account: a, chain: wallet!.chain, address: address_, abi, functionName, args } as never));
+
+  const sell = (approveOnly: boolean) => {
+    const context = saleContext.current;
+    const displayed = readySale;
+    if (!can || !pc || !wallet || !address || tid === undefined || !sellBid || !displayed) return;
+    const bidId = BigInt(sellBid.id);
+    const deadline = BigInt(Math.floor(Date.now() / 1000) + 300);
+    const target = approveOnly ? nft : displayed.quote.spender;
+    const abi = approveOnly ? Contracts.nftApproveAbi : displayed.quote.routed ? PLATFORM_FEE_ABI : Contracts.marketWriteAbi;
+    const functionName = approveOnly ? "approve" : displayed.quote.routed ? "sell" : "fill";
+    const args = approveOnly ? [displayed.quote.spender, tid] : displayed.quote.routed ? [bidId, tid, displayed.quote.proceeds, deadline] : [bidId, [tid]];
+    const checkContext = () => {
+      if (saleContext.current !== context || !context.active || Date.now() - displayed.at > 15000 || Date.now() / 1000 >= Number(deadline)) throw new Error("Sale context / quote expired; refresh before signing");
+    };
+    const check = async () => {
+      checkContext();
+      const router = platformFeeRouterAddress();
+      if (router && !platformFeeStartBlock()) throw new Error("Platform router deployment block is missing");
+      const quote = await readSellerQuote(pc, { router, bidId, asset: context.asset === "relic" ? 0 : 1, seller: address });
+      const state = await readNftSaleState(pc, nft, tid, address, quote.spender);
+      checkContext();
+      if (!sameSellerQuote(displayed.quote, quote)) throw new Error("Bid quote changed; refresh before signing");
+      if (!approveOnly && !state.approved) throw new Error("This NFT is not approved to the sale spender");
+      // Read the wallet provider itself: hook updates may arrive after a network/account switch.
+      const [accounts, chain] = await Promise.all([
+        wallet.request({ method: "eth_accounts" }), wallet.request({ method: "eth_chainId" }),
+      ]);
+      checkContext();
+      if (Number(chain) !== 56 || accounts[0]?.toLowerCase() !== address.toLowerCase()) throw new Error("Wallet account / chain changed");
+    };
+    tx.run(approveOnly ? t.approveNft : `${t.sell} #${sellBid.id}`,
+      async () => { await check(); await pc.simulateContract({ account: address, address: target, abi, functionName, args } as never); checkContext(); },
+      async () => { await check(); checkContext(); return wallet.writeContract({ account: address, chain: wallet.chain, address: target, abi, functionName, args } as never); });
+  };
 
   const assetId = asset === "relic" ? 0 : 1;
   const needApprove = cost !== undefined && (allowance ?? 0n) < cost;
@@ -110,7 +180,7 @@ function Trade({ lang }: { lang: Lang }) {
   const zh = lang === "zh";
   const fee = (view?.feeBps ?? 0) / 10_000;
   const maxQty = Math.max(1, ...(view?.bids.map((b) => b.qty) ?? [1]));
-  const pick = (b: Row) => { setSellBid(b); setSide("sell"); };
+  const pick = (b: Row) => { if (sellBid?.id !== b.id) invalidateSale(); setSellBid(b); setSide("sell"); };
   const approving = tx.label === t.approve || tx.label === t.approveNft;
   // Step indicator: approve -> sign -> pending -> confirmed, driven by the real tx phase.
   const needStep1 = side === "buy" ? needApprove : !nftApproved;
@@ -128,7 +198,7 @@ function Trade({ lang }: { lang: Lang }) {
           <div><dt>{zh ? "最优买价" : "Best bid"}</dt><dd className="up num">{view?.bids[0] ? Fmt.n(view.bids[0].price, 4) : "-"}<small> USDT</small></dd></div>
           <div><dt>{zh ? "买单需求" : "Bid demand"}</dt><dd className="num">{totalDemand === undefined ? "-" : Fmt.n(totalDemand, 0)}<small> NFT</small></dd></div>
           <div><dt>{zh ? "锁定资金" : "In escrow"}</dt><dd className="num">{totalEscrow === undefined ? "-" : Fmt.n(totalEscrow, 2)}<small> USDT</small></dd></div>
-          <div><dt>{zh ? "卖方手续费" : "Seller fee"}</dt><dd className="num">{feeLabel}</dd></div>
+          <div><dt>{zh ? "市场当前费率" : "Current market fee"}</dt><dd className="num">{feeLabel}</dd></div>
         </dl>
       </div>
       {sync?.stale ? <div className="banner error" role="status" data-testid="trade-stale">{zh ? "数据延迟，显示最近成功数据" : "Data delayed. Showing the last successful data."}</div>
@@ -173,16 +243,19 @@ function Trade({ lang }: { lang: Lang }) {
           ) : (
             <div className="order-fields">
               <div className="field wide">{t.selected}<span className="inp"><b className={`num pickv ${sellBid ? "gold" : "dim"}`}>{sellBid ? `#${sellBid.id} @ ${Fmt.n(sellBid.price, 4)} USDT` : (zh ? "← 从买单簿选择" : "← pick from the book")}</b></span></div>
-              <label className="field wide">{t.tokenId}<span className="inp"><input data-testid="token-id" inputMode="numeric" value={tokenId} onChange={(e) => setTokenId(e.target.value)} placeholder={zh ? "输入藏品 Token ID" : "Enter your token ID"} /><em>#</em></span></label>
+              <label className="field wide">{t.tokenId}<span className="inp"><input data-testid="token-id" inputMode="numeric" value={tokenId} onChange={(e) => { if (e.target.value !== tokenId) invalidateSale(); setTokenId(e.target.value); }} placeholder={zh ? "输入藏品 Token ID" : "Enter your token ID"} /><em>#</em></span></label>
               <dl className="kv sum order-summary">
-                <dt>{zh ? "成交价" : "Price"}</dt><dd>{sellBid ? Fmt.n(sellBid.price, 4) : "-"} USDT</dd>
-                <dt>{zh ? "手续费" : "Fee"} ({feeLabel})</dt><dd className="down">{sellBid ? `−${Fmt.n(sellBid.price * fee, 4)}` : "-"} USDT</dd>
-                <dt>{zh ? "预计到手" : "You receive"}</dt><dd className="summary-total"><b className="up">{sellBid ? Fmt.n(sellBid.price * (1 - fee), 4) : "-"} USDT</b></dd>
+                <dt>{zh ? "成交价" : "Price"}</dt><dd>{saleQuote ? formatUnits(saleQuote.gross, 18) : "-"} USDT</dd>
+                <dt>{zh ? "原市场费" : "Market fee"} {saleQuote ? `(${formatUnits(saleQuote.marketFeeBps, 2)}%)` : ""}</dt><dd className="down">{saleQuote ? `−${formatUnits(saleQuote.marketFee, 18)}` : "-"} USDT</dd>
+                {saleQuote?.routed ? <><dt>{zh ? "平台费（卖方 0.5%）" : "Platform fee (seller 0.5%)"}</dt><dd className="down" data-testid="platform-fee">−{formatUnits(saleQuote.platformFee, 18)} USDT</dd><dt>{zh ? "合计费率" : "Total fee rate"}</dt><dd>{formatUnits(saleQuote.marketFeeBps + 50n, 2)}%</dd><dt>{zh ? "平台费收款人" : "Platform recipient"}</dt><dd className="mono" title={PLATFORM_FEE_RECIPIENT}>{Fmt.addr(PLATFORM_FEE_RECIPIENT)}</dd></> : null}
+                <dt>{zh ? "最低净到账" : "Minimum proceeds"}</dt><dd className="summary-total" data-testid="sale-proceeds"><b className="up">{saleQuote ? formatUnits(saleQuote.proceeds, 18) : "-"} USDT</b></dd>
                 <dt>{zh ? "需授权（仅此 NFT）" : "Approval (this NFT only)"}</dt><dd>{tid !== undefined ? `#${tokenId}` : "-"} {nftApproved ? "✓" : ""}</dd>
+                <dt>{zh ? "授权 / 成交合约" : "Approval / sale spender"}</dt><dd className="mono" data-testid="sale-spender" title={saleQuote?.spender}>{saleQuote ? Fmt.addr(saleQuote.spender) : "-"}</dd>
               </dl>
+              {saleError ? <p className="err" role="alert" data-testid="sale-error">{saleError}</p> : null}
               {tid !== undefined && sellBid ? (nftApproved
-                ? <button className="btn primary sell block" data-testid="fill" disabled={!can} onClick={() => write(`${t.sell} #${sellBid.id}`, Contracts.market, Contracts.marketWriteAbi, "fill", [BigInt(sellBid.id), [tid]])}>{t.sell} #{tokenId} → #{sellBid.id}</button>
-                : <button className="btn primary sell block" data-testid="approve-nft" disabled={!can} onClick={() => write(t.approveNft, nft, Contracts.nftApproveAbi, "approve", [Contracts.market, tid])}>{t.approveNft} #{tokenId}</button>)
+                ? <button className="btn primary sell block" data-testid="fill" disabled={!can || !readySale} onClick={() => sell(false)}>{t.sell} #{tokenId} → #{sellBid.id}</button>
+                : <button className="btn primary sell block" data-testid="approve-nft" disabled={!can || !readySale} onClick={() => sell(true)}>{t.approveNft} #{tokenId}</button>)
                 : <button className="btn primary sell block" disabled>{zh ? "选择买单并输入 Token ID" : "Pick a bid and enter a token ID"}</button>}
             </div>
           )}

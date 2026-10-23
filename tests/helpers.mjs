@@ -16,7 +16,7 @@ export function loadModule(file, mocks = {}, globals = {}) {
   }).outputText;
   const exports = {};
   vm.runInNewContext(code, {
-    exports, console, Response, Request, URL, AbortController, AbortSignal, clearTimeout,
+    exports, console, Response, Request, URL, AbortController, AbortSignal, clearTimeout, process: { env: {} },
     setTimeout: () => 0, setInterval: () => 0, clearInterval() {}, ...globals,
     require(name) {
       if (name in mocks) return mocks[name];
@@ -107,10 +107,12 @@ export function panelHarness(file, options = {}) {
     "@/components/tx": { TxStatus: "TxStatus", useTx: () => tx },
     "@/components/wallet": { useWalletGate: () => ({ address: account, ok: true }) },
     "@/components/ui": { TableState: { empty() {}, loading() {} } },
+    ...options.mocks,
   }, {
     fetch: (...args) => (options.fetch ?? (async () => Response.json(snapshot())))(...args),
     setInterval: fn => { const id = intervals.size + 1; intervals.set(id, fn); return id; },
     clearInterval: id => intervals.delete(id),
+    ...options.globals,
   });
   function render() {
     cursor = 0; dirty = false;

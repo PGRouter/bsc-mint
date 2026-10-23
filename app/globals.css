@@ -330,7 +330,7 @@ tr.sk-row:hover td { background:transparent; }
   .brand-wordmark { font-size:19px; } .brand-tag { display:inline; } .status { margin-left:auto; gap:12px; }
   .status .btn.lang { min-width:0; font-size:10px; } .status .btn.lang svg { display:none; }
   .wallet .btn.primary { min-height:35px; padding:7px 12px; font-size:11px; } .wallet .btn.primary svg { width:14px; height:14px; }
-  .nav { order:3; width:100%; height:56px; margin-top:10px; justify-content:flex-start; gap:34px; } .nav a { font-size:13px; padding:0 3px; }
+  .nav { order:3; width:100%; height:56px; margin-top:10px; justify-content:flex-start; gap:clamp(12px,3vw,24px); } .nav a { font-size:13px; padding:0 3px; }
   .network-bar { min-height:41px; } .network-status { font-size:9px; gap:7px; } .network-name { font-size:10px; gap:5px; } .network-id { display:none; }
   .page-head,.monitor-head { padding:26px 0 23px; gap:14px; } .page-head h1,.monitor-head h1 { font-size:28px; margin:6px 0; }
   .page-head p,.monitor-head p { font-size:11px; max-width:36em; } .page-context { display:none; }
@@ -344,7 +344,8 @@ tr.sk-row:hover td { background:transparent; }
   .wrap { padding:0 16px; } .topbar { padding-top:17px; } .brand { gap:7px; } .brand-mark svg { width:25px; height:25px; } .brand-wordmark { font-size:17px; } .brand-tag { display:none; }
   .status { gap:8px; } .wallet { gap:4px; } .wallet .btn.primary { font-size:10px; min-height:34px; padding:7px 10px; gap:6px; }
   .wallet .btn.ghost.sm { font-size:9px; padding:3px 5px; } .wallet .btn.on { min-height:28px; font-size:9px; padding:4px 6px; }
-  .nav { gap:30px; height:54px; } .network-status .hide-sm { display:none; } .network-status { font-size:8px; } .network-name { font-size:9px; }
+  .nav { gap:clamp(6px,2vw,14px); height:54px; } .nav a { padding:0; font-size:12px; gap:5px; } .nav a.nav-social { font-size:11px; } .nav-social svg { display:none; }
+  .network-status .hide-sm { display:none; } .network-status { font-size:8px; } .network-name { font-size:9px; }
   .eyebrow { font-size:8px; letter-spacing:1.2px; } .market-stats { grid-template-columns:repeat(2,minmax(0,1fr)); margin-bottom:20px; }
   .market-stats .card { padding:15px 18px; } .market-stats .card:nth-child(3) { border-right:1px solid var(--line); }
   .market-stats .card:nth-child(2n) { border-right:0; } .market-stats .card:nth-child(4) { border-bottom:1px solid var(--line); }

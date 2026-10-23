@@ -10,6 +10,8 @@ for (const [file, url] of [["snapshot", "http://audit.local/api/snapshot?me=0xAB
     let syncCalls = 0;
     const indexer = {
       PERIODS: [30, 60, 300, 900, 3600],
+      prepare: async () => {},
+      ready: true,
       sync: () => { syncCalls++; return pending.promise; },
       snapshot: me => ({ ready: true, block: 100, me }),
       klines: () => [{ t: 1000, o: 1, h: 2, l: 1, c: 2 }],
@@ -25,6 +27,7 @@ for (const [file, url] of [["snapshot", "http://audit.local/api/snapshot?me=0xAB
       ]);
       assert.notEqual(result, "blocked by sync");
       const json = await result.json();
+      assert.equal(json.ready, true);
       assert.equal(file === "snapshot" ? json.block : json.candles[0].c, file === "snapshot" ? 100 : 2);
       if (file === "snapshot") assert.equal(json.me, "0xabc");
       assert.equal(syncCalls, 0);
@@ -103,6 +106,19 @@ test("backfill retries respect the sync cooldown after an upstream failure", asy
   assert.equal(count, 0);
 });
 
+test("completed refreshes permit a new sync after two seconds", async () => {
+  let now = 10_000, calls = 0;
+  class Clock extends Date { static now() { return now; } }
+  const { Indexer } = fixture({ getBlockNumber: async () => { calls++; return 20n; } }, state(), { Date: Clock });
+  await Indexer.sync();
+  now = 11_999;
+  await Indexer.sync();
+  assert.equal(calls, 1);
+  now = 12_000;
+  await Indexer.sync();
+  assert.equal(calls, 2);
+});
+
 test("range-limited responses are split and every bid is indexed exactly once", async () => {
   const { Contracts } = loadModule("lib/contracts.ts");
   const { Indexer, cached } = fixture({
@@ -131,6 +147,7 @@ test("concurrent refreshes share one upstream sync", async () => {
   const head = deferred();
   const { Indexer } = fixture({ getBlockNumber: async () => { calls++; return head.promise; } });
   const a = Indexer.sync(); const b = Indexer.sync();
+  await Promise.resolve();
   assert.equal(calls, 1);
   head.resolve(20n);
   await Promise.all([a, b]);
@@ -180,6 +197,101 @@ function checkpoint() {
     holders: { relic: [[buyer, 2]], loom: [] },
     mint: { minted: 1, cap: 100, startTime: 0, requireHandle: false, perHandle: 4, firstUsdt: 0, paidUsdt: 0, firstBnb: 0, paidBnb: 0, relicSupply: 1 },
   };
+}
+
+for (const route of ["snapshot", "klines"]) {
+  test(`the first ${route} response waits for the local checkpoint, without starting RPC`, async () => {
+    const disk = deferred(), scheduled = [];
+    let reads = 0, rpcCalls = 0, settled = false;
+    const cp = checkpoint();
+    cp.fills = [{ asset: "relic", price: 1, ts: 1700000000000, tx: "0x" + "1".repeat(64), buyer, seller: buyer, block: 10 }];
+    const { Indexer } = fixture({ getBlockNumber: async () => { rpcCalls++; return 20n; } }, state({ fromBlock: 0n, head: 0n }), {}, {
+      read: () => { reads++; return disk.promise; }, write: async () => {},
+    });
+    const { GET } = loadModule(`app/api/${route}/route.ts`, {
+      "@/lib/indexer": { Indexer }, "next/server": { after: fn => scheduled.push(fn) },
+    });
+    const response = GET(new Request(`http://audit.local/api/${route}?sec=60&asset=relic`))
+      .then(value => { settled = true; return value; });
+    try {
+      for (let i = 0; i < 8; i++) await Promise.resolve();
+      assert.equal(settled, false, "the response must not expose the empty state before restoration");
+      assert.equal(reads, 1);
+      assert.equal(rpcCalls, 0);
+      disk.resolve(cp);
+      const json = await (await response).json();
+      assert.equal(json.ready, true);
+      if (route === "snapshot") {
+        assert.equal(json.block, 20);
+        assert.equal(json.asset.relic.volume.totalFills, 1);
+      } else {
+        assert.equal(json.candles.length, 1);
+        assert.equal(json.candles[0].c, 1);
+      }
+      assert.equal(scheduled.length, 1);
+      assert.equal(rpcCalls, 0, "network synchronization is still deferred until after the response");
+    } finally { disk.resolve(cp); await response; }
+  });
+}
+
+test("concurrent prepare and sync calls share one checkpoint read until restoration finishes", async () => {
+  const disk = deferred();
+  let reads = 0, rpcCalls = 0, prepared = false;
+  const cp = checkpoint();
+  const { Indexer, cached } = fixture({ getBlockNumber: async () => { rpcCalls++; return 20n; } }, state({ fromBlock: 0n, head: 0n }), {}, {
+    read: () => { reads++; return disk.promise; }, write: async () => {},
+  });
+  const first = Indexer.prepare();
+  const second = Indexer.prepare().then(() => { prepared = true; });
+  const refresh = Indexer.sync();
+  try {
+    for (let i = 0; i < 8; i++) await Promise.resolve();
+    assert.equal(reads, 1);
+    assert.equal(prepared, false);
+    assert.notEqual(cached.restored, true);
+    assert.equal(rpcCalls, 0);
+  } finally {
+    disk.resolve(cp);
+    await Promise.all([first, second, refresh]);
+  }
+  await Indexer.prepare();
+  assert.equal(reads, 1, "a completed local restore is reused by later requests");
+  assert.equal(rpcCalls, 1);
+  assert.equal(Indexer.snapshot().asset.relic.demand, 2);
+});
+
+test("checkpoint read failures release preparation and allow normal RPC backfill", async () => {
+  let reads = 0, codeReads = 0;
+  const { Indexer, cached } = fixture({
+    getCode: async ({ blockNumber }) => { codeReads++; return blockNumber >= 10n ? "0x1234" : "0x"; },
+  }, state({ fromBlock: 0n, head: 0n }), {}, {
+    read: async () => { reads++; throw new Error("checkpoint unavailable"); }, write: async () => {},
+  });
+  await assert.doesNotReject(Indexer.prepare());
+  await assert.doesNotReject(Indexer.prepare());
+  assert.equal(reads, 1);
+  assert.equal(Indexer.ready, false);
+  await Indexer.sync();
+  assert.ok(codeReads > 0);
+  assert.equal(cached.lastError, null);
+  assert.equal(cached.lastBlock, 20n);
+  assert.equal(Indexer.ready, true);
+});
+
+for (const ready of [false, true]) {
+  test(`empty candles return HTTP 200 with ready=${ready} after local preparation`, async () => {
+    const { Indexer } = fixture({}, state({ fromBlock: 0n, head: 0n }), {}, {
+      read: async () => ready ? checkpoint() : null, write: async () => {},
+    });
+    const { GET } = loadModule("app/api/klines/route.ts", {
+      "@/lib/indexer": { Indexer }, "next/server": { after() {} },
+    });
+    const response = await GET(new Request("http://audit.local/api/klines?sec=60&asset=relic"));
+    assert.equal(response.status, 200);
+    const json = await response.json();
+    assert.equal(json.ready, ready);
+    assert.equal(json.candles.length, 0);
+  });
 }
 
 test("a restart restores the complete checkpoint without rescanning old blocks", async () => {

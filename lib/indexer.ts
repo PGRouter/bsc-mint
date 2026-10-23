@@ -11,7 +11,7 @@ type State = {
   fromBlock: bigint; lastBlock: bigint; bids: Map<number, Bid>; fills: Fill[];
   holders: Record<Asset, Map<string, number>>; mint: Mint | null; feeBps: number;
   syncedAt: number; lastError: string | null; syncing: Promise<void> | null; lastAttempt: number; head: bigint;
-  restored?: boolean; lastSavedAt?: number;
+  restored?: boolean; preparing?: Promise<void> | null; lastSavedAt?: number;
 };
 type Checkpoint = {
   version: number; chainId: number; contracts: string;
@@ -25,7 +25,7 @@ const g = globalThis as unknown as { __monitor?: State };
 /** Cached chain indexer for the market + NFT contracts. Chain sync uses the historical RPC pool. */
 export class Indexer {
   static readonly CHUNK = 1_000n;
-  static readonly MIN_INTERVAL_MS = 4_000;
+  static readonly MIN_INTERVAL_MS = 2_000;
   /** Stop starting new backfill batches after this budget; pending RPCs retain their transport timeout. */
   static readonly BUDGET_MS = 8_000;
   static readonly BIG_BID_USDT = 50;
@@ -37,8 +37,25 @@ export class Indexer {
     return (g.__monitor ??= {
       fromBlock: 0n, lastBlock: 0n, bids: new Map(), fills: [],
       holders: { relic: new Map(), loom: new Map() }, mint: null, feeBps: 0,
-      syncedAt: 0, lastError: null, syncing: null, lastAttempt: 0, head: 0n,
+      syncedAt: 0, lastError: null, syncing: null, lastAttempt: 0, head: 0n, preparing: null,
     });
+  }
+
+  /** Restore local data once before serving it; never wait for an RPC refresh here. */
+  static async prepare(): Promise<void> {
+    const s = Indexer.s;
+    if (s.preparing) return s.preparing;
+    if (s.restored) return;
+    if (s.fromBlock !== 0n) { s.restored = true; return; }
+    s.preparing = Indexer.restore().finally(() => {
+      s.restored = true;
+      s.preparing = null;
+    });
+    return s.preparing;
+  }
+
+  static get ready(): boolean {
+    return Indexer.s.mint !== null;
   }
 
   /** Syncs at most once per MIN_INTERVAL_MS; concurrent callers share one sync. */
@@ -57,7 +74,7 @@ export class Indexer {
   private static async run() {
     const s = Indexer.s;
     const t0 = Date.now();
-    if (s.fromBlock === 0n && !s.restored) await Indexer.restore();
+    await Indexer.prepare();
     const [headResult, stateResult] = await Promise.allSettled([HistoryRpcPool.call((c) => c.getBlockNumber()), Indexer.readState()]);
     if (headResult.status === "rejected") throw headResult.reason;
     if (stateResult.status === "rejected") throw stateResult.reason;
@@ -87,7 +104,6 @@ export class Indexer {
   /** Restore only checkpoints for this chain and contract set; invalid caches fall back to RPC. */
   private static async restore() {
     const s = Indexer.s;
-    s.restored = true;
     try {
       const c = await IndexCache.read() as Checkpoint | null;
       const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -239,7 +255,7 @@ export class Indexer {
     };
     const staleAge = s.syncedAt ? now - s.syncedAt : null;
     return {
-      now, block: Number(s.lastBlock), fromBlock: Number(s.fromBlock), ready: s.mint !== null,
+      now, block: Number(s.lastBlock), fromBlock: Number(s.fromBlock), ready: Indexer.ready,
       backfill: s.head > s.fromBlock ? Math.min(1, Number(s.lastBlock - s.fromBlock + 1n) / Number(s.head - s.fromBlock + 1n)) : 0,
       stale: !!s.lastError || staleAge === null || staleAge > 30_000, staleAge, error: s.lastError,
       rpc: RpcPool.status(), historyRpc: HistoryRpcPool.status(), feeBps: s.feeBps, mint: s.mint,

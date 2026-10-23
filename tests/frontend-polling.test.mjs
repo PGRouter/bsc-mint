@@ -7,7 +7,7 @@ import { account, bid, deferred, loadModule, nodes, snapshot, textOf } from "./h
 function pollingHarness(file, { fetch: fetcher, exportName = "default", props = {}, lang = "zh" } = {}) {
   const slots = [], effects = [], intervals = new Map(), timers = new Map(), requests = [], canvasCalls = [];
   const document = { visibilityState: "visible" };
-  let cursor = 0, dirty = true, output, timerId = 0, onDone;
+  let cursor = 0, dirty = true, output, timerId = 0, onDone, elapsed = 0;
   const noop = () => {};
   const ctx = new Proxy({}, { get: (_, key) => key === "measureText" ? () => ({ width: 10 }) : () => canvasCalls.push(key), set: () => true });
   const canvas = { clientWidth: 900, clientHeight: 340, style: {}, getContext: () => ctx, addEventListener: noop, removeEventListener: noop };
@@ -55,7 +55,7 @@ function pollingHarness(file, { fetch: fetcher, exportName = "default", props = 
     window: { location: { href: "http://localhost/" }, history: { replaceState: noop }, devicePixelRatio: 1, addEventListener: noop, removeEventListener: noop },
     AbortController, AbortSignal,
     fetch: (...args) => fetcher(...args),
-    setInterval: (fn, ms) => { const id = ++timerId; intervals.set(id, { fn, ms }); return id; },
+    setInterval: (fn, ms) => { const id = ++timerId; intervals.set(id, { fn, ms, next: elapsed + ms }); return id; },
     clearInterval: id => intervals.delete(id),
     setTimeout: (fn, ms) => { const id = ++timerId; timers.set(id, { fn, ms }); return id; },
     clearTimeout: id => timers.delete(id),
@@ -80,6 +80,10 @@ function pollingHarness(file, { fetch: fetcher, exportName = "default", props = 
     byId: id => nodes(output).find(node => node.props["data-testid"] === id),
     button: label => nodes(output).find(node => node.type === "button" && textOf(node) === label),
     poll: () => [...intervals.values()].map(timer => timer.fn()),
+    advance: ms => {
+      elapsed += ms;
+      for (const timer of intervals.values()) while (timer.next <= elapsed) { timer.next += timer.ms; timer.fn(); }
+    },
     completeTx: () => onDone?.(),
     expire: ms => { for (const [id, timer] of [...timers]) if (timer.ms === ms) { timers.delete(id); timer.fn(); } },
     unmount: () => slots.forEach(slot => slot?.cleanup?.()),
@@ -107,6 +111,21 @@ function monitorSnapshot() {
 
 for (const [name, file] of [["monitor", "app/monitor.tsx"], ["trade", "app/trade/panel.tsx"], ["K-line", "components/kline.tsx"]]) {
   const extra = name === "K-line" ? { exportName: "KLine", props: { asset: "relic", lang: "zh", title: "价格走势" } } : {};
+  test(`${name} refreshes settled data every two seconds`, async () => {
+    let calls = 0;
+    const h = pollingHarness(file, { ...extra, fetch: async () => {
+      calls++;
+      return Response.json(name === "K-line" ? { ready: true, candles: [] } : name === "monitor" ? monitorSnapshot() : snapshot());
+    } });
+    await h.flush();
+    assert.equal(calls, 1);
+    h.advance(1999); await h.flush();
+    assert.equal(calls, 1, "do not refetch before the two-second interval");
+    h.advance(1); await h.flush();
+    assert.equal(calls, 2, "the next data refresh starts at two seconds");
+    h.unmount();
+  });
+
   test(`${name} keeps only one polling request in flight`, async () => {
     const requests = [];
     const h = pollingHarness(file, { ...extra, fetch: abortablePending(requests) });
@@ -205,6 +224,66 @@ test("a K-line refresh failure preserves candles for the same asset and period",
   assert.equal(textOf(h.output).includes("暂无成交数据"), false);
   h.unmount(); await h.flush();
 });
+
+for (const [reason, payload] of [
+  ["an unready empty cache", { ready: false, candles: [] }],
+  ["an unready populated cache", { ready: false, candles: [{ t: 60000, o: 40, h: 41, l: 39, c: 40, v: 1, n: 1 }] }],
+  ["an empty ready cache", { ready: true, candles: [] }],
+  ["an empty legacy cache", { candles: [] }],
+  ["missing candles", { ready: true }],
+  ["a malformed candle list", { ready: true, candles: {} }],
+  ["a malformed candle", { ready: true, candles: [{ t: 60000, c: 40 }] }],
+]) {
+  test(`K-line keeps its last valid chart after HTTP 200 with ${reason}`, async () => {
+    let calls = 0;
+    const h = pollingHarness("components/kline.tsx", {
+      exportName: "KLine", props: { asset: "relic", lang: "zh", title: "价格走势" },
+      fetch: async () => Response.json(++calls === 1
+        ? { candles: [{ t: 60000, o: 20, h: 21, l: 19, c: 20, v: 1, n: 1 }] }
+        : payload),
+    });
+    await h.flush();
+    assert.ok(textOf(h.byId("ohlc")).includes("20.00"));
+    const paintCalls = h.canvasCalls.length;
+    await Promise.all(h.poll()); await h.flush();
+    assert.ok(textOf(h.byId("ohlc")).includes("20.00"), "a transient cache response must not blank or replace the chart");
+    assert.equal(textOf(h.output).includes("暂无成交数据"), false);
+    assert.equal(h.canvasCalls.length, paintCalls, "a transient cache response must not clear or redraw the canvas");
+    h.unmount();
+  });
+}
+
+test("K-line does not display an unready response before its first valid chart", async () => {
+  const h = pollingHarness("components/kline.tsx", {
+    exportName: "KLine", props: { asset: "relic", lang: "zh", title: "价格走势" },
+    fetch: async () => Response.json({ ready: false, candles: [{ t: 60000, o: 40, h: 41, l: 39, c: 40, v: 1, n: 1 }] }),
+  });
+  await h.flush();
+  assert.equal(h.byId("ohlc"), undefined);
+  assert.ok(textOf(h.output).includes("暂无成交数据"));
+  h.unmount();
+});
+
+for (const change of ["period", "asset"]) {
+  test(`K-line preserves a valid empty market after switching ${change}`, async () => {
+    let calls = 0;
+    const props = { asset: "relic", lang: "zh", title: "价格走势" };
+    const h = pollingHarness("components/kline.tsx", {
+      exportName: "KLine", props,
+      fetch: async () => Response.json(++calls === 1
+        ? { ready: true, candles: [{ t: 60000, o: 20, h: 21, l: 19, c: 20, v: 1, n: 1 }] }
+        : { ready: true, candles: [] }),
+    });
+    await h.flush();
+    assert.ok(textOf(h.byId("ohlc")).includes("20.00"));
+    if (change === "period") h.button("5m").props.onClick(); else props.asset = "loom";
+    h.render(); await h.flush();
+    assert.equal(h.byId("ohlc"), undefined);
+    assert.ok(textOf(h.output).includes("暂无成交数据"));
+    assert.equal(h.canvasCalls.at(-1), "clearRect");
+    h.unmount();
+  });
+}
 
 test("a failed trade refresh keeps the last successful order book", async () => {
   let calls = 0;

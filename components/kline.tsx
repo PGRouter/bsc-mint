@@ -1,7 +1,7 @@
 "use client";
 // Canvas K-line modelled on the reference monitor's hand-drawn TradingView-style chart:
 // quantile-clamped price axis, volume pane, last-price line, crosshair + OHLC legend,
-// wheel zoom (anchored), drag/touch pan, pinch zoom, dbl-click reset, 3s live refresh.
+// wheel zoom (anchored), drag/touch pan, pinch zoom, dbl-click reset, 2s live refresh.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 
@@ -119,9 +119,13 @@ export function KLine({ asset, lang, title }: { asset: "relic" | "loom"; lang: "
     try {
       const response = await fetch(`/api/klines?sec=${context.sec}&limit=400&asset=${context.asset}`, { cache: "no-store", signal: controller.signal });
       if (!response.ok) throw new Error("Candles unavailable");
-      const j = (await response.json()) as { candles?: Candle[] };
+      const j = (await response.json()) as { ready?: boolean; candles?: Candle[] };
       if (request.current !== context || controller.signal.aborted) return;
-      const s = v.current; s.data = j.candles ?? []; if (s.follow || !s.end) s.end = s.data.length; setData(s.data); draw();
+      if (j?.ready === false || !Array.isArray(j?.candles)) return;
+      if (!j.candles.every((c) => c && [c.t, c.o, c.h, c.l, c.c, c.v, c.n].every(Number.isFinite))) return;
+      const s = v.current;
+      if (!j.candles.length && s.data.length) return;
+      s.data = j.candles; if (s.follow || !s.end) s.end = s.data.length; setData(s.data); draw();
     } catch { /* keep last data */ }
     finally {
       clearTimeout(timeout);
@@ -141,7 +145,7 @@ export function KLine({ asset, lang, title }: { asset: "relic" | "loom"; lang: "
       draw();
     }
     load();
-    const id = setInterval(load, 3000);
+    const id = setInterval(load, 2000);
     return () => {
       clearInterval(id);
       context.active = false;

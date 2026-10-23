@@ -60,7 +60,7 @@ function Trade({ lang }: { lang: Lang }) {
     const context = activeView.current;
     context.active = true;
     load();
-    const id = setInterval(load, 5000);
+    const id = setInterval(load, 2000);
     return () => {
       clearInterval(id);
       context.active = false;

@@ -2,6 +2,7 @@ import { Indexer, type Asset } from "@/lib/indexer";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+export const maxDuration = 30;
 
 export async function GET(req: Request) {
   const q = new URL(req.url).searchParams;

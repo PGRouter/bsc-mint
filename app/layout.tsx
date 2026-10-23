@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 import Providers from "./providers";
 
-export const metadata: Metadata = { title: "BSC Mint Monitor", description: "Read-only on-chain monitor for BSC mint and market contracts" };
+export const metadata: Metadata = { title: "Relic Desk · BSC mint & market", description: "Read-only on-chain monitor for BSC mint and market contracts" };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (

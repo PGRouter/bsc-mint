@@ -1,12 +1,13 @@
 "use client";
 import { useCallback, useState } from "react";
-import { formatEther, formatUnits } from "viem";
+import { formatUnits } from "viem";
 import { useBalance, usePublicClient, useReadContracts, useWalletClient } from "wagmi";
 import { Shell, type Lang } from "@/components/shell";
 import { TxStatus, useTx } from "@/components/tx";
 import { useWalletGate } from "@/components/wallet";
 import { Contracts } from "@/lib/contracts";
 import { TxErrors } from "@/lib/tx";
+import { Fmt } from "@/lib/fmt";
 
 type Pay = "usdt" | "bnb";
 
@@ -71,42 +72,51 @@ function Mint({ lang }: { lang: Lang }) {
     try { const [gl, gp] = await Promise.all([pc.estimateGas({ account: address, to: Contracts.game, value: cost, data: "0x" }), pc.getGasPrice()]); setGas(gl * gp); } catch { setGas(undefined); }
   };
 
+  const pct = minted !== undefined && cap ? Number(minted) / Number(cap) : 0;
+  const costTxt = cost === undefined ? "-" : pay === "usdt" ? `${Fmt.units(cost, 18, 6)} USDT` : `${Fmt.units(cost, 18, 6)} BNB`;
   return (
     <div className="grid2">
-      <div className="panel" data-testid="mint-status">
-        <h3>{t.status}</h3>
-        <table><tbody>
-          <tr><td>{t.status}</td><td>{status}</td></tr>
-          <tr><td>{t.minted}</td><td>{minted?.toLocaleString() ?? "-"} / {cap?.toLocaleString() ?? "-"}</td></tr>
-          <tr><td>{t.startAt}</td><td>{start ? new Date(Number(start) * 1000).toISOString().replace(".000", "") : "-"}</td></tr>
-          <tr><td>requireHandle()</td><td>{String(requireHandle ?? "-")}</td></tr>
-          <tr><td>{t.yourRelics}</td><td data-testid="my-relics">{address ? relics?.toString() ?? "-" : "-"}</td></tr>
-        </tbody></table>
-      </div>
-      <div className="panel">
-        <h3>{t.mint}</h3>
+      <section className="panel" data-testid="mint-status" aria-labelledby="mint-status-h">
+        <h2 id="mint-status-h">{t.status} <span className={`chip ${status === t.soldOut ? "bad" : ""}`}>{status}</span></h2>
+        <div className="card" style={{ padding: 0, border: 0, background: "none" }}>
+          <div className="k">{t.minted}</div>
+          <div className="v">{minted !== undefined ? Fmt.n(Number(minted), 0) : <span className="sk" />}<small>/ {cap !== undefined ? Fmt.n(Number(cap), 0) : "-"}</small></div>
+          <div className="progress" role="progressbar" aria-valuenow={Math.round(pct * 100)} aria-valuemin={0} aria-valuemax={100} aria-label={t.minted}><i style={{ width: Fmt.pct(pct) }} /></div>
+        </div>
+        <dl className="kv" style={{ marginTop: 16 }}>
+          <dt>{t.startAt}</dt><dd>{start ? new Date(Number(start) * 1000).toISOString().slice(0, 16).replace("T", " ") + " UTC" : "-"}</dd>
+          <dt>{t.handle}</dt><dd>{requireHandle === undefined ? "-" : requireHandle ? (lang === "zh" ? "必需" : "required") : (lang === "zh" ? "不需要" : "not required")}</dd>
+          <dt>{t.yourRelics}</dt><dd data-testid="my-relics">{address ? relics?.toString() ?? "-" : "-"}</dd>
+        </dl>
+      </section>
+      <section className="panel" aria-labelledby="mint-h">
+        <h2 id="mint-h">{t.mint}</h2>
         {!address ? <p className="muted">{t.connect}</p> : (
           <>
-            <p data-testid="handle">{t.handle}: {handle ? <b className="up">{handle.endsWith(".ai") ? handle : `${handle}.ai`}</b> : <span className="err">{requireHandle ? t.none : "-"}</span>}</p>
-            <p>{t.quota}: {quote?.[1] ?? "-"} / {cfg?.perHandle ?? "-"}</p>
-            <p>{t.count}: {Array.from({ length: cfg?.perHandle ?? 4 }, (_, i) => i + 1).map((k) => <button key={k} className={`btn ${k === n ? "on" : ""}`} onClick={() => { setN(k); setGas(undefined); }}>{k}</button>)}
-              {" "}{t.pay}: <button data-testid="pay-usdt" className={`btn ${pay === "usdt" ? "on" : ""}`} onClick={() => setPay("usdt")}>USDT</button> <button data-testid="pay-bnb" className={`btn ${pay === "bnb" ? "on" : ""}`} onClick={() => { setPay("bnb"); estimate(); }}>BNB</button></p>
-            <p data-testid="cost">{t.cost}: <b>{cost === undefined ? "-" : pay === "usdt" ? `${formatUnits(cost, 18)} USDT` : `${formatEther(cost)} BNB`}</b>
-              {pay === "usdt" ? <span className="muted"> · {t.allowance} {allowance !== undefined ? formatUnits(allowance, 18) : "-"} · {t.balance} {usdtBal !== undefined ? formatUnits(usdtBal, 18) : "-"}</span>
-                : <span className="muted"> · {t.gas} {gas !== undefined ? `≈ ${formatEther(gas)} BNB` : "-"} · {t.balance} {bnb ? formatEther(bnb.value) : "-"}</span>}</p>
-            {quoteErr ? <p className="err" data-testid="quote-error">{lang === "zh" ? "链上预检失败" : "On-chain precheck reverted"}: {TxErrors.reason(quoteErr)}</p> : null}
-            {pay === "usdt"
-              ? (needApprove ? <button className="btn on" data-testid="approve" disabled={blocked} onClick={approve}>{t.approve}: {cost !== undefined ? formatUnits(cost, 18) : "-"} USDT</button>
-                : <button className="btn on" data-testid="mint" disabled={blocked} onClick={mint}>{t.mint} ×{n}</button>)
-              : <button className="btn on" data-testid="mint-bnb" disabled={blocked} onClick={mintBnb}>{t.mintBnb} ×{n}</button>}
+            <div data-testid="handle" className={`callout ${handle ? "" : requireHandle ? "bad" : ""}`}>{t.handle}: {handle ? <b className="gold">{handle.endsWith(".ai") ? handle : `${handle}.ai`}</b> : <span className="err">{requireHandle ? t.none : "-"}</span>}</div>
+            <div className="row"><span className="muted">{t.quota}</span><b className="num">{quote?.[1] ?? "-"} / {cfg?.perHandle ?? "-"}</b></div>
+            <div className="row"><span className="muted">{t.count}</span><span className="tabs" role="group" aria-label={t.count}>{Array.from({ length: cfg?.perHandle ?? 4 }, (_, i) => i + 1).map((k) => <button key={k} aria-pressed={k === n} className={`btn ${k === n ? "on" : ""}`} onClick={() => { setN(k); setGas(undefined); }}>{k}</button>)}</span></div>
+            <div className="row"><span className="muted">{t.pay}</span><span className="tabs" role="group" aria-label={t.pay}><button data-testid="pay-usdt" aria-pressed={pay === "usdt"} className={`btn ${pay === "usdt" ? "on" : ""}`} onClick={() => setPay("usdt")}>USDT</button><button data-testid="pay-bnb" aria-pressed={pay === "bnb"} className={`btn ${pay === "bnb" ? "on" : ""}`} onClick={() => { setPay("bnb"); estimate(); }}>BNB</button></span></div>
+            <dl className="kv" data-testid="cost">
+              <dt>{t.cost}</dt><dd><b>{costTxt}</b></dd>
+              {pay === "usdt" ? <><dt>{t.allowance}</dt><dd>{Fmt.units(allowance)}</dd><dt>{t.balance}</dt><dd>{Fmt.units(usdtBal)} USDT</dd></>
+                : <><dt>{t.gas}</dt><dd>{gas !== undefined ? `≈ ${Fmt.units(gas, 18, 6)} BNB` : "-"}</dd><dt>{t.balance}</dt><dd>{bnb ? Fmt.units(bnb.value, 18, 4) : "-"} BNB</dd></>}
+            </dl>
+            {quoteErr ? <p className="err" role="alert" data-testid="quote-error">{lang === "zh" ? "链上预检失败" : "On-chain precheck reverted"}: {TxErrors.reason(quoteErr)}</p> : null}
+            <div className="row">
+              {pay === "usdt"
+                ? (needApprove ? <button className="btn primary" data-testid="approve" disabled={blocked} onClick={approve}>{t.approve}: {cost !== undefined ? formatUnits(cost, 18) : "-"} USDT</button>
+                  : <button className="btn primary" data-testid="mint" disabled={blocked} onClick={mint}>{t.mint} ×{n}</button>)
+                : <button className="btn primary" data-testid="mint-bnb" disabled={blocked} onClick={mintBnb}>{t.mintBnb} ×{n}</button>}
+            </div>
             <TxStatus tx={tx} lang={lang} />
           </>
         )}
-      </div>
+      </section>
     </div>
   );
 }
 
 export default function MintPanel() {
-  return <Shell title={{ zh: "铸造", en: "Mint" }}>{(lang) => <Mint lang={lang} />}</Shell>;
+  return <Shell active="/mint" title={{ zh: "铸造", en: "Mint" }} sub={{ zh: "需要已注册的 .ai Agent ID · 你在自己的钱包中签名每一笔交易", en: "Requires a registered .ai Agent ID · you sign every transaction in your own wallet" }}>{(lang) => <Mint lang={lang} />}</Shell>;
 }

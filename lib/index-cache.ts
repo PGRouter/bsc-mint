@@ -7,16 +7,20 @@ import { gzip, gunzip } from "node:zlib";
 const compress = promisify(gzip);
 const decompress = promisify(gunzip);
 const cacheFile = () => process.env.BSC_INDEX_CACHE_FILE ?? path.join(process.cwd(), ".cache", "bsc-indexer-v1.json.gz");
+const seedFile = () => process.env.BSC_INDEX_SEED_FILE ?? path.join(process.cwd(), "data", "bsc-indexer-seed.json.gz");
 
 /** Optional checkpoint storage for public on-chain index data. */
 export class IndexCache {
   static async read(): Promise<unknown | null> {
-    try {
-      const raw = await readFile(cacheFile());
-      return JSON.parse((await decompress(raw)).toString("utf8"));
-    } catch {
-      return null;
+    for (const file of [cacheFile(), seedFile()]) {
+      try {
+        const raw = await readFile(file);
+        return JSON.parse((await decompress(raw)).toString("utf8"));
+      } catch {
+        // A missing or damaged writable cache can fall back to the bundled seed.
+      }
     }
+    return null;
   }
 
   static async write(value: unknown): Promise<void> {

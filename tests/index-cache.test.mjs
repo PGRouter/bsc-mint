@@ -17,7 +17,7 @@ const sourceFile = new URL("../lib/index-cache.ts", import.meta.url);
 
 // Each module gets its own environment and working directory, without changing
 // the real process or the existing shared test harness.
-function loadCache(dir, file) {
+function loadCache(dir, file, seedFile) {
   const exports = {};
   const code = ts.transpileModule(readFileSync(sourceFile, "utf8"), {
     compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, esModuleInterop: true },
@@ -25,7 +25,13 @@ function loadCache(dir, file) {
   vm.runInNewContext(code, {
     exports,
     require,
-    process: { env: file === undefined ? {} : { BSC_INDEX_CACHE_FILE: file }, cwd: () => dir, pid: process.pid },
+    process: {
+      env: {
+        ...(file === undefined ? {} : { BSC_INDEX_CACHE_FILE: file }),
+        ...(seedFile === undefined ? {} : { BSC_INDEX_SEED_FILE: seedFile }),
+      },
+      cwd: () => dir, pid: process.pid,
+    },
   }, { filename: sourceFile.pathname });
   return exports.IndexCache;
 }
@@ -63,6 +69,59 @@ test("the default cache lives in the mocked working directory", async (t) => {
   const file = path.join(dir, ".cache", "bsc-indexer-v1.json.gz");
   assert.deepEqual(JSON.parse((await decompress(await fs.readFile(file))).toString("utf8")), { block: 80123456 });
   assert.deepEqual(structuredClone(await cache.read()), { block: 80123456 });
+});
+
+test("a missing writable cache restores the default server-side seed", async (t) => {
+  const dir = await fixture(t);
+  await fs.mkdir(path.join(dir, "data"));
+  await fs.writeFile(path.join(dir, "data", "bsc-indexer-seed.json.gz"), await compress('{"block":80010000}'));
+  const cache = loadCache(dir, path.join(dir, "writable", "index.json.gz"));
+  assert.deepEqual(structuredClone(await cache.read()), { block: 80010000 });
+});
+
+test("a configured seed takes precedence over the default seed path", async (t) => {
+  const dir = await fixture(t);
+  await fs.mkdir(path.join(dir, "data"));
+  await fs.writeFile(path.join(dir, "data", "bsc-indexer-seed.json.gz"), await compress('{"block":80010000}'));
+  const seedFile = path.join(dir, "custom-seed.json.gz");
+  await fs.writeFile(seedFile, await compress('{"block":80020000}'));
+  const cache = loadCache(dir, path.join(dir, "index.json.gz"), seedFile);
+  assert.deepEqual(structuredClone(await cache.read()), { block: 80020000 });
+});
+
+test("an existing writable cache takes precedence over the seed", async (t) => {
+  const dir = await fixture(t);
+  const file = path.join(dir, "index.json.gz");
+  const seedFile = path.join(dir, "seed.json.gz");
+  await fs.writeFile(file, await compress('{"block":80030000}'));
+  await fs.writeFile(seedFile, await compress('{"block":80010000}'));
+  const cache = loadCache(dir, file, seedFile);
+  assert.deepEqual(structuredClone(await cache.read()), { block: 80030000 });
+});
+
+test("invalid gzip or JSON in the writable cache falls back to the seed", async (t) => {
+  const dir = await fixture(t);
+  const file = path.join(dir, "index.json.gz");
+  const seedFile = path.join(dir, "seed.json.gz");
+  await fs.writeFile(seedFile, await compress('{"block":80010000}'));
+  const cache = loadCache(dir, file, seedFile);
+  for (const invalid of [Buffer.from("not gzip"), await compress("{incomplete")]) {
+    await fs.writeFile(file, invalid);
+    assert.deepEqual(structuredClone(await cache.read()), { block: 80010000 });
+  }
+});
+
+test("saving an incremental checkpoint never changes the read-only seed", async (t) => {
+  const dir = await fixture(t);
+  const file = path.join(dir, "writable", "index.json.gz");
+  const seedFile = path.join(dir, "seed.json.gz");
+  const original = await compress('{"block":80010000}');
+  await fs.writeFile(seedFile, original, { mode: 0o444 });
+  const cache = loadCache(dir, file, seedFile);
+  assert.deepEqual(structuredClone(await cache.read()), { block: 80010000 });
+  await cache.write({ block: 80040000 });
+  assert.deepEqual(structuredClone(await cache.read()), { block: 80040000 });
+  assert.deepEqual(await fs.readFile(seedFile), original);
 });
 
 test("missing, invalid gzip and malformed JSON checkpoints read as null", async (t) => {

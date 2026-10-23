@@ -8,3 +8,5 @@ next-env.d.ts
 *.log
 /artifacts/
 .DS_Store
+.vercel/
+/data/bsc-indexer-seed.json.gz

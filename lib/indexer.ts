@@ -63,12 +63,23 @@ export class Indexer {
   /** getLogs that halves the block range when the RPC rejects a response as too large. */
   private static async logs(c: PublicClient, a: bigint, b: bigint): Promise<Log[]> {
     try {
-      return await c.getLogs({ address: [Contracts.market, Contracts.relic, Contracts.loom], fromBlock: a, toBlock: b });
+      const logs = await c.getLogs({ address: [Contracts.market, Contracts.relic, Contracts.loom], fromBlock: a, toBlock: b });
+      return await Indexer.fillTimestamps(c, logs, a, b);
     } catch (e) {
       if (b === a) { console.error("getLogs failed", a, (e as Error).message.split("\n")[0].slice(0, 200)); throw e; }
       const mid = (a + b) / 2n;
       return [...(await Indexer.logs(c, a, mid)), ...(await Indexer.logs(c, mid + 1n, b))];
     }
+  }
+
+  /** Some RPC responses omit blockTimestamp; interpolate it from the range's boundary blocks. */
+  private static async fillTimestamps(c: PublicClient, logs: Log[], a: bigint, b: bigint): Promise<Log[]> {
+    type L = Log & { blockTimestamp?: bigint | string | null };
+    if (logs.every((l) => (l as L).blockTimestamp != null)) return logs;
+    const [ta, tb] = await Promise.all([a, b].map((n) => c.getBlock({ blockNumber: n }).then((x) => Number(x.timestamp))));
+    const span = Number(b - a) || 1;
+    for (const l of logs as L[]) if (l.blockTimestamp == null) l.blockTimestamp = BigInt(Math.round(ta + ((tb - ta) * Number((l.blockNumber ?? a) - a)) / span));
+    return logs;
   }
 
   /** Binary search for the market contract's creation block (needs an archive-capable RPC). */

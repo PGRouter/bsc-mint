@@ -14,7 +14,7 @@ export class RpcPool {
       if (!urls.length) throw new Error("BSC_RPC_URL is not set");
       RpcPool.providers = urls.map((url, i) => ({
         label: `rpc#${i + 1}`,
-        client: createPublicClient({ chain: bsc, transport: http(url, { timeout: 20_000, retryCount: 1 }) }) as PublicClient,
+        client: createPublicClient({ chain: bsc, transport: http(url, { timeout: 8_000, retryCount: 0 }) }) as PublicClient,
         fails: 0, cooldownUntil: 0, ms: 0, lastOk: 0,
       }));
     }

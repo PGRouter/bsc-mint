@@ -8,7 +8,7 @@ export class WalletConfig {
   static readonly config = createConfig({
     chains: [bsc],
     connectors: [injected()],
-    transports: { [bsc.id]: http("/api/rpc") },
+    transports: { [bsc.id]: http("/api/rpc", { timeout: 10_000, retryCount: 0 }) },
     ssr: true,
   });
 }

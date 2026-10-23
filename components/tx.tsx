@@ -29,7 +29,7 @@ export function useTx(onDone?: () => void) {
     }
     setHash(h); setPhase("submitted");
     try {
-      const r = await pc.waitForTransactionReceipt({ hash: h });
+      const r = await pc.waitForTransactionReceipt({ hash: h, pollingInterval: 2000 });
       if (r.status === "success") setPhase("success"); else { setError("reverted on-chain"); setPhase("failed"); }
     } catch (e) { setError(TxErrors.reason(e)); setPhase("failed"); }
     onDone?.();
@@ -43,14 +43,17 @@ const TEXT = {
   en: { simulating: "Simulating…", signing: "Waiting for signature in wallet", submitted: "Submitted, waiting for confirmation", success: "Success", failed: "Failed", rejected: "Rejected (nothing sent)" },
 } as const;
 
+/** Transaction toast: fixed, announced to screen readers, dismissible once finished. */
 export function TxStatus({ tx, lang }: { tx: ReturnType<typeof useTx>; lang: "zh" | "en" }) {
   if (tx.phase === "idle") return null;
-  const cls = tx.phase === "success" ? "up" : tx.phase === "failed" || tx.phase === "rejected" ? "err" : "muted";
+  const cls = tx.phase === "success" ? "up" : tx.phase === "failed" || tx.phase === "rejected" ? "err" : "gold";
   return (
-    <div className="txstatus" data-testid="tx-status" data-phase={tx.phase}>
-      <b>{tx.label}</b>: <span className={cls}>{TEXT[lang][tx.phase]}</span>
-      {tx.error ? <span className="err"> — {tx.error}</span> : null}
-      {tx.hash ? <> · <a href={`https://bscscan.com/tx/${tx.hash}`} target="_blank" rel="noreferrer" className="mono">{tx.hash.slice(0, 14)}…</a></> : null}
+    <div className="toast" role="status" aria-live="polite" data-testid="tx-status" data-phase={tx.phase}>
+      <div><b>{tx.label}</b></div>
+      <div className={cls}>{tx.busy ? <span className="spin" aria-hidden /> : null} {TEXT[lang][tx.phase]}</div>
+      {tx.error ? <div className="err muted">{tx.error}</div> : null}
+      {tx.hash ? <div className="muted">BscScan: <a href={`https://bscscan.com/tx/${tx.hash}`} target="_blank" rel="noreferrer" className="mono">{tx.hash.slice(0, 10)}…{tx.hash.slice(-6)}</a></div> : null}
+      {!tx.busy ? <button className="btn ghost x" onClick={tx.reset} aria-label={lang === "zh" ? "关闭" : "Dismiss"}>×</button> : null}
     </div>
   );
 }

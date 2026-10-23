@@ -1,6 +1,6 @@
 import { decodeEventLog, formatUnits, type Address, type Log, type PublicClient } from "viem";
 import { Contracts } from "./contracts";
-import { RpcPool } from "./rpc";
+import { HistoryRpcPool, RpcPool } from "./rpc";
 import { IndexCache } from "@/lib/index-cache";
 
 export type Asset = "relic" | "loom";
@@ -22,7 +22,7 @@ type Checkpoint = {
 const ZERO = "0x0000000000000000000000000000000000000000";
 const g = globalThis as unknown as { __monitor?: State };
 
-/** Cached chain indexer for the market + NFT contracts. Read-only; all RPC goes through RpcPool. */
+/** Cached chain indexer for the market + NFT contracts. Chain sync uses the historical RPC pool. */
 export class Indexer {
   static readonly CHUNK = 1_000n;
   static readonly MIN_INTERVAL_MS = 4_000;
@@ -58,7 +58,7 @@ export class Indexer {
     const s = Indexer.s;
     const t0 = Date.now();
     if (s.fromBlock === 0n && !s.restored) await Indexer.restore();
-    const [headResult, stateResult] = await Promise.allSettled([RpcPool.call((c) => c.getBlockNumber()), Indexer.readState()]);
+    const [headResult, stateResult] = await Promise.allSettled([HistoryRpcPool.call((c) => c.getBlockNumber()), Indexer.readState()]);
     if (headResult.status === "rejected") throw headResult.reason;
     if (stateResult.status === "rejected") throw stateResult.reason;
     const head = headResult.value;
@@ -68,7 +68,7 @@ export class Indexer {
     for (let a = s.lastBlock + 1n; a <= head; a += Indexer.CHUNK) ranges.push([a, a + Indexer.CHUNK - 1n > head ? head : a + Indexer.CHUNK - 1n]);
     for (let i = 0; i < ranges.length && Date.now() - t0 < Indexer.BUDGET_MS; i += 4) {
       const batch = await Indexer.all(ranges.slice(i, i + 4).map(([a, b]) =>
-        RpcPool.call((c) => Indexer.logs(c, a, b))));
+        HistoryRpcPool.call((c) => Indexer.logs(c, a, b))));
       for (const logs of batch) for (const l of logs) Indexer.apply(l);
       s.lastBlock = ranges[Math.min(i + 3, ranges.length - 1)][1];
     }
@@ -158,7 +158,7 @@ export class Indexer {
     let lo = 0n, hi = head;
     while (lo < hi) {
       const mid = (lo + hi) / 2n;
-      const code = await RpcPool.call((c) => c.getCode({ address: Contracts.market, blockNumber: mid }));
+      const code = await HistoryRpcPool.call((c) => c.getCode({ address: Contracts.market, blockNumber: mid }));
       if (code && code !== "0x") hi = mid; else lo = mid + 1n;
     }
     return lo;
@@ -195,7 +195,7 @@ export class Indexer {
 
   private static async readState() {
     const s = Indexer.s;
-    const r = await RpcPool.call((c) => c.multicall({ allowFailure: false, contracts: [
+    const r = await HistoryRpcPool.call((c) => c.multicall({ allowFailure: false, contracts: [
       { address: Contracts.game, abi: Contracts.gameAbi, functionName: "publicMinted" },
       { address: Contracts.game, abi: Contracts.gameAbi, functionName: "publicCap" },
       { address: Contracts.game, abi: Contracts.gameAbi, functionName: "config" },
@@ -242,7 +242,7 @@ export class Indexer {
       now, block: Number(s.lastBlock), fromBlock: Number(s.fromBlock), ready: s.mint !== null,
       backfill: s.head > s.fromBlock ? Math.min(1, Number(s.lastBlock - s.fromBlock + 1n) / Number(s.head - s.fromBlock + 1n)) : 0,
       stale: !!s.lastError || staleAge === null || staleAge > 30_000, staleAge, error: s.lastError,
-      rpc: RpcPool.status(), feeBps: s.feeBps, mint: s.mint,
+      rpc: RpcPool.status(), historyRpc: HistoryRpcPool.status(), feeBps: s.feeBps, mint: s.mint,
       contracts: { game: Contracts.game, relic: Contracts.relic, loom: Contracts.loom, market: Contracts.market },
       asset: { relic: assetView("relic"), loom: assetView("loom") },
     };

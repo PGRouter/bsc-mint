@@ -53,11 +53,30 @@ function fixture(overrides = {}, cached = state(), globals = {}, cache = { read:
     ...overrides,
   };
   const { Indexer } = loadModule("lib/indexer.ts", {
-    "./rpc": { RpcPool: { call: fn => fn(client), status: () => [] } },
+    "./rpc": {
+      RpcPool: {
+        call: () => { throw new Error("index synchronization must use historical providers"); },
+        status: () => [{ label: "rpc#1", fails: 0, cooldown: false, ms: 10, lastOk: 1000 }],
+      },
+      HistoryRpcPool: {
+        call: fn => fn(client),
+        status: () => [{ label: "history#1", fails: 0, cooldown: false, ms: 20, lastOk: 1000 }],
+      },
+    },
     "@/lib/index-cache": { IndexCache: cache },
   }, { __monitor: cached, console: { error() {} }, ...globals });
   return { Indexer, cached };
 }
+
+test("chain synchronization uses history providers while snapshots expose both pool statuses", async () => {
+  const { Indexer, cached } = fixture();
+  await Indexer.sync();
+  assert.equal(cached.lastError, null);
+  assert.equal(cached.lastBlock, 20n);
+  const snapshot = Indexer.snapshot();
+  assert.equal(snapshot.rpc[0].label, "rpc#1");
+  assert.equal(snapshot.historyRpc[0].label, "history#1");
+});
 
 test("rate-limit failures do not recursively multiply getLogs requests", async () => {
   let count = 0;

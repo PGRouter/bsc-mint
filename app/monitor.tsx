@@ -11,7 +11,7 @@ type Fill = { price: number; ts: number; tx: string; buyer: string; seller: stri
 type AssetView = { count: number; best: number; escrow: number; demand: number; bigCount: number; bigEscrow: number; bids: Bid[]; lastPrice: number | null;
   volume: { totalUsdt: number; totalFills: number; last1m: { count: number; usdt: number }; last5m: { count: number; usdt: number }; last15m: { count: number; usdt: number } };
   fills: Fill[]; holders: { address: string; count: number }[]; holderCount: number };
-type Snapshot = { now: number; block: number; ready: boolean; stale: boolean; staleAge: number | null; error: string | null; feeBps: number;
+type Snapshot = { now: number; block: number; ready: boolean; backfill: number; stale: boolean; staleAge: number | null; error: string | null; feeBps: number;
   rpc: { label: string; ms: number; fails: number; cooldown: boolean }[];
   mint: { minted: number; cap: number; startTime: number; requireHandle: boolean; perHandle: number; firstUsdt: number; paidUsdt: number; firstBnb: number; paidBnb: number; relicSupply: number } | null;
   contracts: Record<string, string>; asset: Record<Asset, AssetView> };
@@ -97,6 +97,7 @@ export default function Monitor() {
         </div>
       </header>
       {(snap?.stale && snap.ready) || netErr ? <div className="banner" data-testid="stale-banner">{t.stale}{snap?.staleAge ? ` (${Math.round(snap.staleAge / 1000)}s)` : ""}</div> : null}
+      {snap?.ready && snap.backfill < 1 ? <div className="banner" data-testid="backfill">{t.loading} {Math.floor(snap.backfill * 100)}%</div> : null}
       {!snap?.ready ? <div className="banner">{t.loading}{snap?.error ? ` — ${snap.error}` : ""}</div> : null}
       <div className="cards">
         <div className="card"><div className="k">{t.activeBids}</div><div className="v">{a ? a.count : "-"}</div><div className="s">{t.demand} {a ? Fmt.n(a.demand, 0) : "-"}</div></div>

@@ -29,6 +29,25 @@ export class Contracts {
     "error QuotaExceeded(bytes32 handleHash, uint8 minted, uint8 requested)",
     "error SoldOut(uint256 remaining)",
     "error ERC721NonexistentToken(uint256 tokenId)",
+    "error ERC721InsufficientApproval(address operator, uint256 tokenId)",
+    "error ERC721InvalidApprover(address approver)",
+    "error ERC721NonexistentToken(uint256 tokenId)",
+    "error ERC721IncorrectOwner(address sender, uint256 tokenId, address owner)",
+  ]);
+
+  /** Market write surface: fragments from the reference bundle, selectors confirmed in bytecode, behaviour checked on a local fork. */
+  static readonly marketWriteAbi = parseAbi([
+    "function placeBid(uint8 asset, uint256 price, uint32 quantity) returns (uint256 id)",
+    "function cancelBid(uint256 id)",
+    "function fill(uint256 id, uint256[] tokenIds)",
+  ]);
+
+  /** Per-token NFT approval (no setApprovalForAll: approvals are scoped to exactly what is sold). */
+  static readonly nftApproveAbi = parseAbi([
+    "function ownerOf(uint256 tokenId) view returns (address)",
+    "function getApproved(uint256 tokenId) view returns (address)",
+    "function isApprovedForAll(address owner, address operator) view returns (bool)",
+    "function approve(address to, uint256 tokenId)",
   ]);
 
   static readonly mintAbi = parseAbi([

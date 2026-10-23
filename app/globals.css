@@ -29,3 +29,4 @@ th { color: var(--muted); text-align: left; font-weight: 500; padding: 3px 4px; 
 nav a { margin-right: 12px; font-size: 13px; }
 .txstatus { margin-top: 10px; font-size: 13px; }
 .panel p { margin: 6px 0; }
+input { background: #0d131a; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 3px 6px; font-family: var(--mono); }

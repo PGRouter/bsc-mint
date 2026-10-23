@@ -1,7 +1,4 @@
 "use client";
-// Canvas K-line modelled on the reference monitor's hand-drawn TradingView-style chart:
-// quantile-clamped price axis, volume pane, last-price line, crosshair + OHLC legend,
-// wheel zoom (anchored), drag/touch pan, pinch zoom, dbl-click reset, 2s live refresh.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Icon } from "@/components/icons";
 

@@ -182,7 +182,6 @@ function Trade({ lang }: { lang: Lang }) {
   const maxQty = Math.max(1, ...(view?.bids.map((b) => b.qty) ?? [1]));
   const pick = (b: Row) => { if (sellBid?.id !== b.id) invalidateSale(); setSellBid(b); setSide("sell"); };
   const approving = tx.label === t.approve || tx.label === t.approveNft;
-  // Step indicator: approve -> sign -> pending -> confirmed, driven by the real tx phase.
   const needStep1 = side === "buy" ? needApprove : !nftApproved;
   const steps = [zh ? "授权" : "Approve", zh ? "签名" : "Sign", zh ? "上链中" : "Pending", zh ? "已确认" : "Confirmed"];
   const cur = tx.phase === "signing" || tx.phase === "simulating" ? (approving ? 0 : 1) : tx.phase === "submitted" ? 2 : tx.phase === "success" && !approving ? 3 : needStep1 ? 0 : 1;

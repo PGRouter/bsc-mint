@@ -9,7 +9,6 @@ const decompress = promisify(gunzip);
 const cacheFile = () => process.env.BSC_INDEX_CACHE_FILE ?? path.join(process.cwd(), ".cache", "bsc-indexer-v1.json.gz");
 const seedFile = () => process.env.BSC_INDEX_SEED_FILE ?? path.join(process.cwd(), "data", "bsc-indexer-seed.json.gz");
 
-/** Optional checkpoint storage for public on-chain index data. */
 export class IndexCache {
   static async read(): Promise<unknown | null> {
     for (const file of [cacheFile(), seedFile()]) {

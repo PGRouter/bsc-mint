@@ -31,7 +31,6 @@ type Checkpoint = {
 const ZERO = "0x0000000000000000000000000000000000000000";
 const g = globalThis as unknown as { __monitor?: State };
 
-/** Cached chain indexer for the market + NFT contracts. Chain sync uses the historical RPC pool. */
 export class Indexer {
   static readonly CHUNK = 1_000n;
   static readonly MIN_INTERVAL_MS = 2_000;

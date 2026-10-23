@@ -3,7 +3,6 @@ import { Contracts } from "./contracts";
 
 export type TxPhase = "idle" | "simulating" | "signing" | "submitted" | "success" | "failed" | "rejected";
 
-/** Helpers for turning wallet/RPC errors into user-facing states. */
 export class TxErrors {
   static isRejected(e: unknown): boolean {
     if (e instanceof BaseError && e.walk((x) => x instanceof UserRejectedRequestError)) return true;

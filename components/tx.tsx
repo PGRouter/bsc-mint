@@ -43,7 +43,6 @@ const TEXT = {
   en: { simulating: "Simulating…", signing: "Waiting for signature in wallet", submitted: "Submitted, waiting for confirmation", success: "Success", failed: "Failed", rejected: "Rejected (nothing sent)" },
 } as const;
 
-/** Transaction toast: fixed, announced to screen readers, dismissible once finished. */
 export function TxStatus({ tx, lang }: { tx: ReturnType<typeof useTx>; lang: "zh" | "en" }) {
   if (tx.phase === "idle") return null;
   const cls = tx.phase === "success" ? "up" : tx.phase === "failed" || tx.phase === "rejected" ? "err" : "gold";

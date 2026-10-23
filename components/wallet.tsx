@@ -37,7 +37,6 @@ export function WalletButton({ lang }: { lang: "zh" | "en" }) {
   );
 }
 
-/** Banner shown wherever a transaction could be started while the wallet is on the wrong chain. */
 export function ChainGuard({ lang }: { lang: "zh" | "en" }) {
   const { wrongChain } = useWalletGate();
   if (!wrongChain) return null;

@@ -10,7 +10,6 @@ type Page = "/" | "/mint" | "/trade";
 const NAV: [Page, Record<Lang, string>][] = [["/", { zh: "监控", en: "Monitor" }], ["/mint", { zh: "铸造", en: "Mint" }], ["/trade", { zh: "交易", en: "Trade" }]];
 const SOCIAL_LINKS = { x: "https://x.com/oylpangu", github: "https://github.com/PGRouter/bsc-mint" } as const;
 
-/** Shared top bar: neutral brand, page nav, optional status slot, language toggle and wallet. */
 export function TopBar({ lang, setLang, active, status, showNetwork = true }: { lang: Lang; setLang: (l: Lang) => void; active: Page; status?: React.ReactNode; showNetwork?: boolean }) {
   const q = `?lang=${lang}`;
   return (
@@ -33,7 +32,6 @@ export function TopBar({ lang, setLang, active, status, showNetwork = true }: { 
   );
 }
 
-/** Page frame for the transaction pages: top bar, page heading, wrong-chain guard. */
 export function Shell({ title, sub, active, children }: { title: Record<Lang, string>; sub?: Record<Lang, string>; active: Page; children: (lang: Lang) => React.ReactNode }) {
   const params = useSearchParams();
   const [lang, setLang] = useState<Lang>(params.get("lang") === "en" ? "en" : "zh");

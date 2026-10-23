@@ -1,14 +1,5 @@
 import { parseAbi, type Address } from "viem";
 
-/**
- * Contract addresses and the minimal read-only ABI surface.
- *
- * Addresses: taken from the reference site's config and cross-checked on-chain
- * (market.game()/relic()/loom()/usdt() and game.relic()/market() all point at each other).
- * Methods/events: human-readable fragments copied from the reference frontend bundle,
- * and every selector/topic below was confirmed present in the deployed bytecode.
- * The contracts are NOT source-verified on BscScan; see the PR for details.
- */
 export class Contracts {
   static readonly game: Address = "0xB0D5f3108aF164f5F7046F53ab59FD2779812d10";
   static readonly relic: Address = "0xe8C6b38b5E63377a96b268319B66638f772254bb";
@@ -19,7 +10,6 @@ export class Contracts {
   /** = game.handleRegistry() on-chain (.ai Agent ID registry). */
   static readonly handleRegistry: Address = "0x60B9262456dE011F7d15a54CdD8c48bAaa8B022F";
 
-  /** Custom errors from the reference frontend bundle, used to decode revert reasons. */
   static readonly errorsAbi = parseAbi([
     "error BnbTransferFailed(address recipient)",
     "error InvalidConfig()",
@@ -35,7 +25,6 @@ export class Contracts {
     "error ERC721IncorrectOwner(address sender, uint256 tokenId, address owner)",
   ]);
 
-  /** Market write surface: fragments from the reference bundle, selectors confirmed in bytecode, behaviour checked on a local fork. */
   static readonly marketWriteAbi = parseAbi([
     "function placeBid(uint8 asset, uint256 price, uint32 quantity) returns (uint256 id)",
     "function cancelBid(uint256 id)",

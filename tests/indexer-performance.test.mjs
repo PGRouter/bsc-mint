@@ -67,6 +67,7 @@ function fixture(overrides = {}, cached = state(), globals = {}, cache = { read:
       },
     },
     "@/lib/index-cache": { IndexCache: cache },
+    "@/lib/platform-fee": { platformFeeRouterAddress: () => undefined, PLATFORM_SALE_ABI: [] },
   }, { __monitor: cached, console: { error() {} }, ...globals });
   return { Indexer, cached };
 }

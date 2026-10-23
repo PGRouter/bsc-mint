@@ -4,11 +4,15 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run build:platform-fee && next build",
     "start": "next start",
     "lint": "eslint",
     "test": "node --test tests/*.test.mjs",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:platform-fee": "node scripts/build-platform-fee.mjs",
+    "test:contracts": "node --test tests/contracts/router.test.mjs",
+    "test:fork": "node --test tests/contracts/fork.test.mjs",
+    "verify:platform-fee": "node scripts/verify-platform-fee.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.104.5",
@@ -21,11 +25,14 @@
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",
+    "@foundry-rs/anvil": "1.7.1",
+    "@openzeppelin/contracts": "5.4.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "15.5.28",
+    "solc": "0.8.30",
     "typescript": "^5"
   }
 }

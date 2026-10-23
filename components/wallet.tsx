@@ -1,6 +1,7 @@
 "use client";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { WalletConfig } from "@/lib/wagmi";
+import { Icon } from "./icons";
 
 /** Wallet gate: ok only when connected on BSC (chainId 56). Every write in the app checks this first. */
 export function useWalletGate() {
@@ -19,19 +20,19 @@ export function WalletButton({ lang }: { lang: "zh" | "en" }) {
     const c = connectors[0];
     return (
       <span className="wallet">
-        <button className="btn on" data-testid="connect" disabled={!c || isPending} onClick={() => c && connect({ connector: c, chainId: WalletConfig.chain.id })}>
-          {isPending ? (zh ? "等待钱包确认…" : "Confirm in wallet…") : zh ? "连接钱包" : "Connect wallet"}
+        <button className="btn primary" data-testid="connect" disabled={!c || isPending} onClick={() => c && connect({ connector: c, chainId: WalletConfig.chain.id })}>
+          {isPending ? <span className="spin" aria-hidden /> : <Icon name="wallet" size={17} />}{isPending ? (zh ? "等待钱包确认…" : "Confirm in wallet…") : zh ? "连接钱包" : "Connect wallet"}
         </button>
-        {error ? <span className="err">{error.message.split("\n")[0]}</span> : null}
+        {error ? <span className="err" role="alert">{error.message.split("\n")[0]}</span> : null}
       </span>
     );
   }
   return (
     <span className="wallet" data-testid="wallet">
-      <span className={`chip ${wrongChain ? "bad" : ""}`}>{wrongChain ? (zh ? `错误网络 (${chainId})` : `Wrong network (${chainId})`) : "BSC · 56"}</span>
-      <span className="chip mono">{address?.slice(0, 6)}…{address?.slice(-4)}</span>
+      <span className={`chip ${wrongChain ? "bad" : ""}`}><span className={`dot ${wrongChain ? "err" : ""}`} aria-hidden />{wrongChain ? (zh ? `错误网络 (${chainId})` : `Wrong network (${chainId})`) : "BSC · 56"}</span>
+      <span className="chip mono" title={address}>{address?.slice(0, 6)}…{address?.slice(-4)}</span>
       {wrongChain ? <button className="btn on" onClick={() => switchChain({ chainId: WalletConfig.chain.id })}>{zh ? "切换到 BSC" : "Switch to BSC"}</button> : null}
-      <button className="btn" onClick={() => disconnect()}>{zh ? "断开" : "Disconnect"}</button>
+      <button className="btn ghost sm" onClick={() => disconnect()}>{zh ? "断开" : "Disconnect"}</button>
     </span>
   );
 }
@@ -40,5 +41,5 @@ export function WalletButton({ lang }: { lang: "zh" | "en" }) {
 export function ChainGuard({ lang }: { lang: "zh" | "en" }) {
   const { wrongChain } = useWalletGate();
   if (!wrongChain) return null;
-  return <div className="banner" data-testid="wrong-chain">{lang === "zh" ? "钱包不在 BSC 网络，交易已阻止。请切换到 BSC (chainId 56)。" : "Wallet is not on BSC. Transactions are blocked. Switch to BSC (chainId 56)."}</div>;
+  return <div className="banner error" role="alert" data-testid="wrong-chain">{lang === "zh" ? "钱包不在 BSC 网络，交易已阻止。请切换到 BSC (chainId 56)。" : "Wallet is not on BSC. Transactions are blocked. Switch to BSC (chainId 56)."}</div>;
 }

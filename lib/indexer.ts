@@ -1,6 +1,7 @@
 import { decodeEventLog, formatUnits, type Address, type Log, type PublicClient } from "viem";
 import { Contracts } from "./contracts";
 import { RpcPool } from "./rpc";
+import { IndexCache } from "@/lib/index-cache";
 
 export type Asset = "relic" | "loom";
 type Bid = { id: number; buyer: string; asset: Asset; price: number; qty: number; remaining: number; ts: number };
@@ -10,16 +11,22 @@ type State = {
   fromBlock: bigint; lastBlock: bigint; bids: Map<number, Bid>; fills: Fill[];
   holders: Record<Asset, Map<string, number>>; mint: Mint | null; feeBps: number;
   syncedAt: number; lastError: string | null; syncing: Promise<void> | null; lastAttempt: number; head: bigint;
+  restored?: boolean; lastSavedAt?: number;
+};
+type Checkpoint = {
+  version: number; chainId: number; contracts: string;
+  fromBlock: string; lastBlock: string; head: string; syncedAt: number; feeBps: number;
+  bids: [number, Bid][]; fills: Fill[]; holders: Record<Asset, [string, number][]>; mint: Mint | null;
 };
 
 const ZERO = "0x0000000000000000000000000000000000000000";
 const g = globalThis as unknown as { __monitor?: State };
 
-/** In-memory chain indexer for the market + NFT contracts. Read-only; all RPC goes through RpcPool. */
+/** Cached chain indexer for the market + NFT contracts. Read-only; all RPC goes through RpcPool. */
 export class Indexer {
-  static readonly CHUNK = 500n;
+  static readonly CHUNK = 1_000n;
   static readonly MIN_INTERVAL_MS = 4_000;
-  /** Max time one request spends backfilling; the rest continues on later polls (serverless-safe, no cold-start timeout). */
+  /** Stop starting new backfill batches after this budget; pending RPCs retain their transport timeout. */
   static readonly BUDGET_MS = 8_000;
   static readonly BIG_BID_USDT = 50;
   /** Bids priced below this are spam/dust (e.g. 1 wei x uint32.max) and are excluded from book metrics. */
@@ -38,10 +45,10 @@ export class Indexer {
   static async sync(): Promise<void> {
     const s = Indexer.s;
     if (s.syncing) return s.syncing;
-    if (s.lastBlock >= s.head && Date.now() - s.lastAttempt < Indexer.MIN_INTERVAL_MS) return;
+    if (Date.now() - s.lastAttempt < Indexer.MIN_INTERVAL_MS) return;
     s.lastAttempt = Date.now();
     s.syncing = Indexer.run().then(
-      () => { s.lastError = null; s.syncedAt = Date.now(); },
+      async () => { s.lastError = null; s.syncedAt = Date.now(); await Indexer.save(); },
       (e: unknown) => { s.lastError = e instanceof Error ? e.message.split("\n")[0].replace(/https?:\/\/\S+/g, "<rpc>") : String(e); },
     ).finally(() => { s.syncing = null; });
     return s.syncing;
@@ -50,27 +57,87 @@ export class Indexer {
   private static async run() {
     const s = Indexer.s;
     const t0 = Date.now();
-    const head = await RpcPool.call((c) => c.getBlockNumber());
+    if (s.fromBlock === 0n && !s.restored) await Indexer.restore();
+    const [headResult, stateResult] = await Promise.allSettled([RpcPool.call((c) => c.getBlockNumber()), Indexer.readState()]);
+    if (headResult.status === "rejected") throw headResult.reason;
+    if (stateResult.status === "rejected") throw stateResult.reason;
+    const head = headResult.value;
     s.head = head;
-    await Indexer.readState();
     if (s.fromBlock === 0n) { s.fromBlock = await Indexer.deployBlock(head); s.lastBlock = s.fromBlock - 1n; }
     const ranges: [bigint, bigint][] = [];
     for (let a = s.lastBlock + 1n; a <= head; a += Indexer.CHUNK) ranges.push([a, a + Indexer.CHUNK - 1n > head ? head : a + Indexer.CHUNK - 1n]);
     for (let i = 0; i < ranges.length && Date.now() - t0 < Indexer.BUDGET_MS; i += 4) {
-      const batch = await Promise.all(ranges.slice(i, i + 4).map(([a, b]) =>
+      const batch = await Indexer.all(ranges.slice(i, i + 4).map(([a, b]) =>
         RpcPool.call((c) => Indexer.logs(c, a, b))));
       for (const logs of batch) for (const l of logs) Indexer.apply(l);
       s.lastBlock = ranges[Math.min(i + 3, ranges.length - 1)][1];
     }
   }
 
+  /** Keep the sync lock until every sibling RPC settles, including when one fails early. */
+  private static async all<T>(jobs: Promise<T>[]): Promise<T[]> {
+    const results = await Promise.allSettled(jobs);
+    return results.map((r) => { if (r.status === "rejected") throw r.reason; return r.value; });
+  }
+
+  private static fingerprint() {
+    return [Contracts.game, Contracts.market, Contracts.relic, Contracts.loom].map((a) => a.toLowerCase()).join(":");
+  }
+
+  /** Restore only checkpoints for this chain and contract set; invalid caches fall back to RPC. */
+  private static async restore() {
+    const s = Indexer.s;
+    s.restored = true;
+    try {
+      const c = await IndexCache.read() as Checkpoint | null;
+      const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+      const address = (v: unknown) => typeof v === "string" && /^0x[0-9a-f]{40}$/.test(v);
+      const asset = (v: unknown) => v === "relic" || v === "loom";
+      if (!c || c.version !== 1 || c.chainId !== 56 || c.contracts !== Indexer.fingerprint()) return;
+      if (![c.fromBlock, c.lastBlock, c.head].every((v) => typeof v === "string" && /^\d+$/.test(v))) return;
+      const fromBlock = BigInt(c.fromBlock), lastBlock = BigInt(c.lastBlock), head = BigInt(c.head);
+      if (fromBlock <= 0n || lastBlock < fromBlock - 1n || head < lastBlock || !finite(c.syncedAt) || !finite(c.feeBps)) return;
+      if (!Array.isArray(c.bids) || !c.bids.every((p) => Array.isArray(p) && p.length === 2 && finite(p[0]) && p[1] &&
+        p[0] === p[1].id && address(p[1].buyer) && asset(p[1].asset) &&
+        [p[1].id, p[1].price, p[1].qty, p[1].remaining, p[1].ts].every(finite))) return;
+      if (!Array.isArray(c.fills) || !c.fills.every((f) => f && asset(f.asset) && address(f.buyer) && address(f.seller) &&
+        typeof f.tx === "string" && [f.price, f.ts, f.block].every(finite))) return;
+      if (!c.holders || !(["relic", "loom"] as const).every((a) => Array.isArray(c.holders[a]) &&
+        c.holders[a].every((p) => Array.isArray(p) && p.length === 2 && address(p[0]) && finite(p[1]) && p[1] > 0))) return;
+      if (c.mint !== null && (!c.mint || typeof c.mint.requireHandle !== "boolean" ||
+        ![c.mint.minted, c.mint.cap, c.mint.startTime, c.mint.perHandle, c.mint.firstUsdt, c.mint.paidUsdt,
+          c.mint.firstBnb, c.mint.paidBnb, c.mint.relicSupply].every(finite))) return;
+      Object.assign(s, { fromBlock, lastBlock, head, syncedAt: c.syncedAt, feeBps: c.feeBps, mint: c.mint,
+        bids: new Map(c.bids), fills: c.fills, holders: { relic: new Map(c.holders.relic), loom: new Map(c.holders.loom) } });
+    } catch { /* An optional cache must never prevent a fresh sync. */ }
+  }
+
+  private static async save() {
+    const s = Indexer.s;
+    if (s.fromBlock === 0n || s.lastBlock < s.fromBlock || (s.lastSavedAt && Date.now() - s.lastSavedAt < 15_000)) return;
+    s.lastSavedAt = Date.now();
+    const checkpoint: Checkpoint = {
+      version: 1, chainId: 56, contracts: Indexer.fingerprint(),
+      fromBlock: String(s.fromBlock), lastBlock: String(s.lastBlock), head: String(s.head), syncedAt: s.syncedAt, feeBps: s.feeBps,
+      bids: [...s.bids], fills: s.fills, holders: { relic: [...s.holders.relic], loom: [...s.holders.loom] }, mint: s.mint,
+    };
+    await IndexCache.write(checkpoint);
+  }
+
   /** getLogs that halves the block range when the RPC rejects a response as too large. */
   private static async logs(c: PublicClient, a: bigint, b: bigint): Promise<Log[]> {
     try {
-      const logs = await c.getLogs({ address: [Contracts.market, Contracts.relic, Contracts.loom], fromBlock: a, toBlock: b });
+      const logs = await c.getLogs({
+        address: [Contracts.market, Contracts.relic, Contracts.loom], fromBlock: a, toBlock: b,
+        events: [...Contracts.marketAbi.filter((x) => x.type === "event"), ...Contracts.erc721Abi.filter((x) => x.type === "event")],
+      });
       return await Indexer.fillTimestamps(c, logs, a, b);
     } catch (e) {
-      if (b === a) { console.error("getLogs failed", a, (e as Error).message.split("\n")[0].slice(0, 200)); throw e; }
+      // Rate limits and transport failures must not fan out into hundreds of smaller calls.
+      const message = e instanceof Error ? e.message : String(e);
+      const transient = /429|too many requests|rate limit|request limit|quota|unauthorized|forbidden|timeout|timed out|fetch failed|ECONN|ENOTFOUND/i.test(message);
+      const rangeLimit = /block range|range.*(?:large|wide|limit)|too many (?:results|logs)|response.*(?:size|large)|query returned more/i.test(message);
+      if (b === a || transient || !rangeLimit) throw e;
       const mid = (a + b) / 2n;
       return [...(await Indexer.logs(c, a, mid)), ...(await Indexer.logs(c, mid + 1n, b))];
     }
@@ -80,7 +147,7 @@ export class Indexer {
   private static async fillTimestamps(c: PublicClient, logs: Log[], a: bigint, b: bigint): Promise<Log[]> {
     type L = Log & { blockTimestamp?: bigint | string | null };
     if (logs.every((l) => (l as L).blockTimestamp != null)) return logs;
-    const [ta, tb] = await Promise.all([a, b].map((n) => c.getBlock({ blockNumber: n }).then((x) => Number(x.timestamp))));
+    const [ta, tb] = await Indexer.all([a, b].map((n) => c.getBlock({ blockNumber: n }).then((x) => Number(x.timestamp))));
     const span = Number(b - a) || 1;
     for (const l of logs as L[]) if (l.blockTimestamp == null) l.blockTimestamp = BigInt(Math.round(ta + ((tb - ta) * Number((l.blockNumber ?? a) - a)) / span));
     return logs;
@@ -142,6 +209,7 @@ export class Indexer {
     s.feeBps = feeBps;
     s.mint = { minted: Number(minted), cap: Number(cap), startTime: Number(start) * 1000, requireHandle, perHandle: cfg.perHandle,
       firstUsdt: f(cfg.firstPrice), paidUsdt: f(cfg.paidPrice), firstBnb: f(cfg.firstPriceBnb), paidBnb: f(cfg.paidPriceBnb), relicSupply: Number(relicSupply) };
+    s.syncedAt = Date.now();
   }
 
   static snapshot(me?: string) {

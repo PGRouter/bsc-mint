@@ -9,7 +9,7 @@ type Mint = { minted: number; cap: number; startTime: number; requireHandle: boo
 type State = {
   fromBlock: bigint; lastBlock: bigint; bids: Map<number, Bid>; fills: Fill[];
   holders: Record<Asset, Map<string, number>>; mint: Mint | null; feeBps: number;
-  syncedAt: number; lastError: string | null; syncing: Promise<void> | null; lastAttempt: number;
+  syncedAt: number; lastError: string | null; syncing: Promise<void> | null; lastAttempt: number; head: bigint;
 };
 
 const ZERO = "0x0000000000000000000000000000000000000000";
@@ -19,6 +19,8 @@ const g = globalThis as unknown as { __monitor?: State };
 export class Indexer {
   static readonly CHUNK = 500n;
   static readonly MIN_INTERVAL_MS = 4_000;
+  /** Max time one request spends backfilling; the rest continues on later polls (serverless-safe, no cold-start timeout). */
+  static readonly BUDGET_MS = 8_000;
   static readonly BIG_BID_USDT = 50;
   /** Bids priced below this are spam/dust (e.g. 1 wei x uint32.max) and are excluded from book metrics. */
   static readonly DUST_PRICE_USDT = 0.01;
@@ -28,7 +30,7 @@ export class Indexer {
     return (g.__monitor ??= {
       fromBlock: 0n, lastBlock: 0n, bids: new Map(), fills: [],
       holders: { relic: new Map(), loom: new Map() }, mint: null, feeBps: 0,
-      syncedAt: 0, lastError: null, syncing: null, lastAttempt: 0,
+      syncedAt: 0, lastError: null, syncing: null, lastAttempt: 0, head: 0n,
     });
   }
 
@@ -36,7 +38,7 @@ export class Indexer {
   static async sync(): Promise<void> {
     const s = Indexer.s;
     if (s.syncing) return s.syncing;
-    if (Date.now() - s.lastAttempt < Indexer.MIN_INTERVAL_MS) return;
+    if (s.lastBlock >= s.head && Date.now() - s.lastAttempt < Indexer.MIN_INTERVAL_MS) return;
     s.lastAttempt = Date.now();
     s.syncing = Indexer.run().then(
       () => { s.lastError = null; s.syncedAt = Date.now(); },
@@ -47,17 +49,19 @@ export class Indexer {
 
   private static async run() {
     const s = Indexer.s;
+    const t0 = Date.now();
     const head = await RpcPool.call((c) => c.getBlockNumber());
+    s.head = head;
+    await Indexer.readState();
     if (s.fromBlock === 0n) { s.fromBlock = await Indexer.deployBlock(head); s.lastBlock = s.fromBlock - 1n; }
     const ranges: [bigint, bigint][] = [];
     for (let a = s.lastBlock + 1n; a <= head; a += Indexer.CHUNK) ranges.push([a, a + Indexer.CHUNK - 1n > head ? head : a + Indexer.CHUNK - 1n]);
-    for (let i = 0; i < ranges.length; i += 4) {
+    for (let i = 0; i < ranges.length && Date.now() - t0 < Indexer.BUDGET_MS; i += 4) {
       const batch = await Promise.all(ranges.slice(i, i + 4).map(([a, b]) =>
         RpcPool.call((c) => Indexer.logs(c, a, b))));
       for (const logs of batch) for (const l of logs) Indexer.apply(l);
       s.lastBlock = ranges[Math.min(i + 3, ranges.length - 1)][1];
     }
-    await Indexer.readState();
   }
 
   /** getLogs that halves the block range when the RPC rejects a response as too large. */
@@ -168,6 +172,7 @@ export class Indexer {
     const staleAge = s.syncedAt ? now - s.syncedAt : null;
     return {
       now, block: Number(s.lastBlock), fromBlock: Number(s.fromBlock), ready: s.mint !== null,
+      backfill: s.head > s.fromBlock ? Math.min(1, Number(s.lastBlock - s.fromBlock + 1n) / Number(s.head - s.fromBlock + 1n)) : 0,
       stale: !!s.lastError || staleAge === null || staleAge > 30_000, staleAge, error: s.lastError,
       rpc: RpcPool.status(), feeBps: s.feeBps, mint: s.mint,
       contracts: { game: Contracts.game, relic: Contracts.relic, loom: Contracts.loom, market: Contracts.market },

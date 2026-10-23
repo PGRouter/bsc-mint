@@ -15,7 +15,7 @@ export function Shell({ title, children }: { title: Record<Lang, string>; childr
     <div className="wrap">
       <header>
         <div><div className="title">{title[lang]}</div>
-          <nav><Link href={`/${q}`}>{lang === "zh" ? "监控" : "Monitor"}</Link><Link href={`/mint${q}`}>{lang === "zh" ? "铸造" : "Mint"}</Link></nav></div>
+          <nav><Link href={`/${q}`}>{lang === "zh" ? "监控" : "Monitor"}</Link><Link href={`/mint${q}`}>{lang === "zh" ? "铸造" : "Mint"}</Link><Link href={`/trade${q}`}>{lang === "zh" ? "交易" : "Trade"}</Link></nav></div>
         <div className="status">
           <button className="btn" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>{lang === "zh" ? "EN" : "中文"}</button>
           <WalletButton lang={lang} />

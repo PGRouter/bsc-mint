@@ -17,8 +17,8 @@ type Row = { id: number; buyer?: string; price: number; qty: number; total: numb
 type View = { feeBps?: number; demand?: number; escrow?: number; bids: Row[]; mine: Row[]; fills: { price: number; ts: number; tx: string; buyer: string; seller: string }[] };
 
 const T = {
-  zh: { book: "买单簿", mine: "我的买单", place: "挂买单", price: "单价 USDT", qty: "数量", cost: "需锁定", allowance: "当前授权", approve: "授权 USDT（仅本次所需）", submit: "挂单", cancel: "撤单", sell: "卖出", tokenId: "Token ID", approveNft: "仅授权此 NFT", fills: "最近成交", connect: "请先连接钱包", feeNote: "成交手续费由卖方承担", selected: "已选买单" },
-  en: { book: "Bid book", mine: "My bids", place: "Place bid", price: "Price USDT", qty: "Qty", cost: "Escrow", allowance: "Current allowance", approve: "Approve USDT (exact amount only)", submit: "Place bid", cancel: "Cancel", sell: "Sell", tokenId: "Token ID", approveNft: "Approve this NFT only", fills: "Recent fills", connect: "Connect a wallet first", feeNote: "Fill fee is paid by the seller", selected: "Selected bid" },
+  zh: { book: "买单簿", mine: "我的买单", place: "挂买单", price: "单价 USDT", qty: "数量", cost: "需锁定", allowance: "当前授权", approve: "授权 USDT（仅本次所需）", submit: "挂单", cancel: "撤单", sell: "卖出", tokenId: "Token ID", approveNft: "仅授权此 NFT", fills: "最近成交", connect: "请先连接钱包", selected: "已选买单" },
+  en: { book: "Bid book", mine: "My bids", place: "Place bid", price: "Price USDT", qty: "Qty", cost: "Escrow", allowance: "Current allowance", approve: "Approve USDT (exact amount only)", submit: "Place bid", cancel: "Cancel", sell: "Sell", tokenId: "Token ID", approveNft: "Approve this NFT only", fills: "Recent fills", connect: "Connect a wallet first", selected: "Selected bid" },
 } as const;
 
 function Trade({ lang }: { lang: Lang }) {

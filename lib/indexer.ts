@@ -144,7 +144,7 @@ export class Indexer {
       firstUsdt: f(cfg.firstPrice), paidUsdt: f(cfg.paidPrice), firstBnb: f(cfg.firstPriceBnb), paidBnb: f(cfg.paidPriceBnb), relicSupply: Number(relicSupply) };
   }
 
-  static snapshot() {
+  static snapshot(me?: string) {
     const s = Indexer.s;
     const now = Date.now();
     const assetView = (asset: Asset) => {
@@ -160,6 +160,7 @@ export class Indexer {
         escrow: open.reduce((a, b) => a + total(b), 0),
         demand: open.reduce((a, b) => a + b.remaining, 0),
         bigCount: big.length, bigEscrow: big.reduce((a, b) => a + total(b), 0),
+        mine: me ? live.filter((b) => b.buyer === me).map((b) => ({ id: b.id, price: b.price, qty: b.remaining, total: total(b), ts: b.ts })) : [],
         bids: open.sort((a, b) => b.price - a.price || a.ts - b.ts).slice(0, 50).map((b) => ({ id: b.id, buyer: b.buyer, price: b.price, qty: b.remaining, total: total(b), ts: b.ts })),
         lastPrice: fills.at(-1)?.price ?? null,
         volume: { totalUsdt: fills.reduce((a, x) => a + x.price, 0), totalFills: fills.length, last1m: win(60e3), last5m: win(300e3), last15m: win(900e3) },

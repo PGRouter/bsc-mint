@@ -10,10 +10,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@tanstack/react-query": "^5.104.5",
+    "@wagmi/core": "^2.22.1",
     "next": "15.5.28",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "viem": "^2.57.10"
+    "viem": "^2.57.10",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

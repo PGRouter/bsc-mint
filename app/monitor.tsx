@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { WalletButton } from "@/components/wallet";
 
 type Lang = "zh" | "en";
 type Asset = "relic" | "loom";
@@ -92,6 +93,8 @@ export default function Monitor() {
           <span>{t.block} <b>{snap?.block ? snap.block.toLocaleString() : "-"}</b></span>
           <span>{rpc ? `${rpc.label} ${rpc.ms}ms` : "rpc -"}</span>
           <button className="btn" onClick={() => setLang(lang === "zh" ? "en" : "zh")}>{lang === "zh" ? "EN" : "中文"}</button>
+          <a className="btn" href={`/mint?lang=${lang}`}>{lang === "zh" ? "铸造" : "Mint"}</a>
+          <WalletButton lang={lang} />
         </div>
       </header>
       {(snap?.stale && snap.ready) || netErr ? <div className="banner" data-testid="stale-banner">{t.stale}{snap?.staleAge ? ` (${Math.round(snap.staleAge / 1000)}s)` : ""}</div> : null}

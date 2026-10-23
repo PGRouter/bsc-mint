@@ -13,14 +13,18 @@ export function TopBar({ lang, setLang, active, status }: { lang: Lang; setLang:
   const q = `?lang=${lang}`;
   return (
     <header className="topbar">
-      <Link href={`/${q}`} className="brand" aria-label="Relic Desk home"><span className="brand-mark" aria-hidden>◆</span><span>Relic Desk<small>BSC · on-chain</small></span></Link>
+      <div className="tb-row">
+      <Link href={`/${q}`} className="brand" aria-label="Relic Desk home"><span className="brand-mark" aria-hidden>R</span><span className="brand-name">Relic Desk</span><span className="brand-sep" aria-hidden /><span className="brand-sub">BSC on-chain</span></Link>
+      <div className="status">
+        {status}
+        <button className="btn ghost sm lang" onClick={() => setLang(lang === "zh" ? "en" : "zh")} aria-label={lang === "zh" ? "Switch to English" : "切换到中文"}>{lang === "zh" ? "EN" : "中文"}</button>
+        <WalletButton lang={lang} />
+      </div>
+      </div>
+      <div className="tb-sub">
       <nav className="nav" aria-label={lang === "zh" ? "主导航" : "Main"}>
         {NAV.map(([href, label]) => <Link key={href} href={`${href}${q}`} aria-current={href === active ? "page" : undefined}>{label[lang]}</Link>)}
       </nav>
-      <div className="status">
-        {status}
-        <button className="btn ghost sm" onClick={() => setLang(lang === "zh" ? "en" : "zh")} aria-label={lang === "zh" ? "Switch to English" : "切换到中文"}>{lang === "zh" ? "EN" : "中文"}</button>
-        <WalletButton lang={lang} />
       </div>
     </header>
   );

@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type Candle = { t: number; o: number; h: number; l: number; c: number; v: number; n: number };
 const PERIODS = [[30, "30s"], [60, "1m"], [300, "5m"], [900, "15m"], [3600, "1h"]] as const;
-const UP = "#2ebd85", DN = "#f6465d", AXIS_R = 62, MONO = "ui-monospace, Consolas, monospace";
+const UP = "#0ecb81", DN = "#f6465d", AXIS_R = 62, MONO = "ui-monospace, Consolas, monospace";
 const fp = (v: number) => v.toFixed(2);
 const fv = (v: number) => (v >= 1000 ? (v / 1000).toFixed(1) + "K" : v.toFixed(1));
 const p2 = (n: number) => String(n).padStart(2, "0");
@@ -51,17 +51,17 @@ export function KLine({ asset, lang, title }: { asset: "relic" | "loom"; lang: "
     const y = (p: number) => priceTop + priceH - ((p - lo) / (hi - lo)) * priceH;
     const x = (i: number) => padL + (i - start + 0.5) * step;
 
-    ctx.save(); ctx.fillStyle = "rgba(230,237,243,.028)"; ctx.font = '700 64px -apple-system, "Segoe UI", sans-serif';
-    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("◆ RELIC DESK", padL + plotW / 2, priceTop + priceH / 2); ctx.restore();
+    ctx.save(); ctx.fillStyle = "rgba(250,250,249,.025)"; ctx.font = '700 64px -apple-system, "Segoe UI", sans-serif';
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("RELIC DESK", padL + plotW / 2, priceTop + priceH / 2); ctx.restore();
 
     ctx.font = `10px ${MONO}`; ctx.textBaseline = "middle"; ctx.textAlign = "left"; ctx.lineWidth = 1;
     for (let g = 0; g <= 4; g++) {
       const val = lo + ((hi - lo) * g) / 4, yy = y(val);
-      ctx.strokeStyle = "rgba(29,40,54,.75)"; ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(W - AXIS_R, yy); ctx.stroke();
-      ctx.fillStyle = "#5a6b7b"; ctx.fillText(fp(val), W - AXIS_R + 7, yy);
+      ctx.strokeStyle = "rgba(66,62,60,.6)"; ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(W - AXIS_R, yy); ctx.stroke();
+      ctx.fillStyle = "#9f9fa9"; ctx.fillText(fp(val), W - AXIS_R + 7, yy);
     }
     const every = Math.max(1, Math.ceil(count / 7));
-    ctx.strokeStyle = "rgba(29,40,54,.55)"; ctx.fillStyle = "#55636f"; ctx.textAlign = "center";
+    ctx.strokeStyle = "rgba(66,62,60,.45)"; ctx.fillStyle = "#71717b"; ctx.textAlign = "center";
     for (let i = 0; i < count; i += every) {
       const d = new Date(slice[i].t), xx = x(start + i);
       const lab = s.sec >= 3600 ? `${d.getMonth() + 1}/${d.getDate()} ${p2(d.getHours())}:00` : `${p2(d.getHours())}:${p2(d.getMinutes())}${s.sec < 60 ? ":" + p2(d.getSeconds()) : ""}`;
@@ -69,10 +69,10 @@ export function KLine({ asset, lang, title }: { asset: "relic" | "loom"; lang: "
     }
     slice.forEach((c, i) => {
       const vh = volMax ? (c.v / volMax) * volH : 0;
-      ctx.fillStyle = c.c >= c.o ? "rgba(46,189,133,.30)" : "rgba(246,70,93,.28)";
+      ctx.fillStyle = c.c >= c.o ? "rgba(14,203,129,.30)" : "rgba(246,70,93,.28)";
       ctx.fillRect(x(start + i) - bw / 2, volTop + volH - vh, bw, Math.max(1, vh));
     });
-    ctx.fillStyle = "#4a5866"; ctx.textAlign = "left"; ctx.font = `9px ${MONO}`; ctx.fillText("VOLUME", padL + 2, volTop - 4);
+    ctx.fillStyle = "#71717b"; ctx.textAlign = "left"; ctx.font = `9px ${MONO}`; ctx.fillText("VOLUME", padL + 2, volTop - 4);
 
     ctx.save(); ctx.beginPath(); ctx.rect(padL, priceTop - 3, plotW, priceH + 6); ctx.clip();
     slice.forEach((c, i) => {
@@ -90,19 +90,19 @@ export function KLine({ asset, lang, title }: { asset: "relic" | "loom"; lang: "
     };
     const last = s.data[n - 1], ly = y(last.c), lu = last.c >= last.o;
     if (ly > priceTop && ly < priceTop + priceH) {
-      ctx.setLineDash([3, 3]); ctx.strokeStyle = lu ? "rgba(46,189,133,.55)" : "rgba(246,70,93,.55)";
+      ctx.setLineDash([3, 3]); ctx.strokeStyle = lu ? "rgba(14,203,129,.55)" : "rgba(246,70,93,.55)";
       ctx.beginPath(); ctx.moveTo(padL, ly); ctx.lineTo(W - AXIS_R, ly); ctx.stroke(); ctx.setLineDash([]);
-      tag(ly, lu ? UP : DN, "#08121a", fp(last.c));
+      tag(ly, lu ? UP : DN, "#0f1719", fp(last.c));
     }
     let idx = end - 1;
     if (s.hover != null && s.hover >= start && s.hover < end) {
       idx = s.hover; const c = s.data[idx], cx = x(idx), cy = y(c.c);
-      ctx.strokeStyle = "rgba(210,224,238,.35)"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = "rgba(250,250,249,.35)"; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.moveTo(cx, priceTop); ctx.lineTo(cx, volTop + volH); ctx.moveTo(padL, cy); ctx.lineTo(W - AXIS_R, cy); ctx.stroke(); ctx.setLineDash([]);
-      tag(cy, "#2b3a4b", "#dbe6f2", fp(c.c));
+      tag(cy, "#2a2826", "#fafaf9", fp(c.c));
       const d = new Date(c.t), tw = 46, bx = Math.min(W - AXIS_R - tw, Math.max(padL, cx - tw / 2));
-      ctx.fillStyle = "#2b3a4b"; ctx.fillRect(bx, H - axisB + 1, tw, 18);
-      ctx.fillStyle = "#dbe6f2"; ctx.textAlign = "center"; ctx.fillText(`${p2(d.getHours())}:${p2(d.getMinutes())}`, bx + tw / 2, H - axisB + 10);
+      ctx.fillStyle = "#2a2826"; ctx.fillRect(bx, H - axisB + 1, tw, 18);
+      ctx.fillStyle = "#fafaf9"; ctx.textAlign = "center"; ctx.fillText(`${p2(d.getHours())}:${p2(d.getMinutes())}`, bx + tw / 2, H - axisB + 10);
     }
     const c = s.data[idx], prev = idx > 0 ? s.data[idx - 1].c : c.o;
     setLegend({ c, chg: prev ? ((c.c - prev) / prev) * 100 : 0 });
@@ -161,7 +161,7 @@ export function KLine({ asset, lang, title }: { asset: "relic" | "loom"; lang: "
       </div>
       <div className="kbody">
         {L && d ? <div className="kohlc" data-testid="ohlc">
-          <span style={{ color: "#8b9aa9" }}>{p2(d.getHours())}:{p2(d.getMinutes())}</span>
+          <span style={{ color: "#9f9fa9" }}>{p2(d.getHours())}:{p2(d.getMinutes())}</span>
           <span>O<b>{fp(L.c.o)}</b></span><span>H<b>{fp(L.c.h)}</b></span><span>L<b>{fp(L.c.l)}</b></span><span>C<b>{fp(L.c.c)}</b></span>
           <span className={L.chg >= 0 ? "up" : "down"} style={{ fontWeight: 600 }}>{L.chg >= 0 ? "+" : ""}{L.chg.toFixed(2)}%</span>
           <span>VOL<b>{fv(L.c.v)}</b></span><span>N<b>{L.c.n}</b></span>

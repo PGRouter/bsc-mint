@@ -7,6 +7,7 @@ import { TxStatus, useTx } from "@/components/tx";
 import { useWalletGate } from "@/components/wallet";
 import { Contracts } from "@/lib/contracts";
 import { Fmt } from "@/lib/fmt";
+import { TableState } from "@/components/ui";
 
 type Asset = "relic" | "loom";
 type Row = { id: number; buyer?: string; price: number; qty: number; total: number; ts: number };
@@ -60,7 +61,7 @@ function Trade({ lang }: { lang: Lang }) {
 
   const assetId = asset === "relic" ? 0 : 1;
   const needApprove = cost !== undefined && (allowance ?? 0n) < cost;
-  const empty = (cols: number, text: string) => <tr><td className="empty" colSpan={cols}>{view ? text : <span className="sk" />}</td></tr>;
+  const empty = (cols: number, text: string) => view ? TableState.empty(cols, text) : TableState.loading(cols, 4);
   const none = lang === "zh" ? "暂无" : "Nothing yet";
   const zh = lang === "zh";
   const fee = (view?.feeBps ?? 0) / 10_000;
@@ -83,7 +84,7 @@ function Trade({ lang }: { lang: Lang }) {
       <div className="exch">
         <section className="panel" aria-labelledby="book-h">
           <h2 id="book-h">{t.book} <span className="muted">{zh ? "点击买单即可卖出" : "click a bid to sell into it"}</span></h2>
-          <div className="scroll tall"><table className="book"><thead><tr><th className="r">{t.price}</th><th className="r">{t.qty}</th><th className="r">{zh ? "总额" : "Total"}</th><th className="r">id</th></tr></thead><tbody data-testid="book">
+          <div className="scroll tall"><table className="book"><thead><tr><th className="r book-col">{t.price}</th><th className="r book-col">{t.qty}</th><th className="r book-col">{zh ? "总额" : "Total"}</th><th className="r book-col">id</th></tr></thead><tbody data-testid="book">
             {view?.bids.length ? view.bids.map((b) => {
               const mine = b.buyer === address?.toLowerCase();
               return <tr key={b.id} className={`${sellBid?.id === b.id ? "sel" : ""} ${mine ? "mine" : "pick"}`} style={{ ["--d" as string]: `${(b.qty / maxQty) * 100}%` }}
@@ -114,7 +115,7 @@ function Trade({ lang }: { lang: Lang }) {
             </div>
           ) : (
             <div>
-              <div className="field wide">{t.selected}<span className="inp"><b className="gold num" style={{ padding: "8px 10px", flex: 1 }}>{sellBid ? `#${sellBid.id} @ ${Fmt.n(sellBid.price, 4)} USDT` : (zh ? "← 从买单簿选择" : "← pick from the book")}</b></span></div>
+              <div className="field wide">{t.selected}<span className="inp"><b className={`num pickv ${sellBid ? "gold" : "dim"}`}>{sellBid ? `#${sellBid.id} @ ${Fmt.n(sellBid.price, 4)} USDT` : (zh ? "← 从买单簿选择" : "← pick from the book")}</b></span></div>
               <label className="field wide">{t.tokenId}<span className="inp"><input data-testid="token-id" inputMode="numeric" value={tokenId} onChange={(e) => setTokenId(e.target.value)} placeholder="e.g. 63609" /><em>#</em></span></label>
               <dl className="kv sum">
                 <dt>{zh ? "成交价" : "Price"}</dt><dd>{sellBid ? Fmt.n(sellBid.price, 4) : "-"} USDT</dd>
@@ -131,17 +132,17 @@ function Trade({ lang }: { lang: Lang }) {
           <ol className="steps" aria-label={zh ? "交易步骤" : "Transaction steps"} data-testid="steps">
             {steps.map((x, i) => <li key={x} className={`${i < cur ? "done" : ""} ${i === cur ? (bad ? "bad" : "cur") : ""}`} aria-current={i === cur ? "step" : undefined}>{x}</li>)}
           </ol>
-          {bad ? <p className="err" role="alert" data-testid="step-error">{tx.phase === "rejected" ? (zh ? "已在钱包中拒绝，未发送任何交易。" : "Rejected in wallet. Nothing was sent.") : tx.error}</p> : null}
-          <p className="muted">{zh ? "每笔交易先 eth_call 模拟；失败会显示原因且不会请求签名。" : "Every transaction is simulated with eth_call first; a revert shows its reason and never asks for a signature."}</p>
+          {bad ? <p className="step-err" role="alert" data-testid="step-error">{tx.phase === "rejected" ? (zh ? "已在钱包中拒绝，未发送任何交易。" : "Rejected in wallet. Nothing was sent.") : tx.error}</p> : null}
+          <p className="note">{zh ? "每笔交易先 eth_call 模拟；失败会显示原因且不会请求签名。" : "Every transaction is simulated with eth_call first; a revert shows its reason and never asks for a signature."}</p>
         </section>
       </div>
       <div className="grid2">
         <section className="panel" aria-labelledby="mine-h"><h2 id="mine-h">{t.mine}</h2>
-          <table><thead><tr><th>id</th><th className="r">{t.price}</th><th className="r">{t.qty}</th><th className="r">{zh ? "锁定" : "Escrow"}</th><th /></tr></thead><tbody data-testid="my-bids">
+          <div className="scroll"><table><thead><tr><th>id</th><th className="r">{t.price}</th><th className="r">{t.qty}</th><th className="r">{zh ? "锁定" : "Escrow"}</th><th /></tr></thead><tbody data-testid="my-bids">
             {view?.mine.length ? view.mine.map((b) => <tr key={b.id}><td>{b.id}</td><td className="r">{Fmt.n(b.price, 4)}</td><td className="r">{b.qty}</td><td className="r">{Fmt.n(b.total)}</td><td className="r"><button className="btn sm" disabled={!can} onClick={() => write(`${t.cancel} #${b.id}`, Contracts.market, Contracts.marketWriteAbi, "cancelBid", [BigInt(b.id)])}>{t.cancel}</button></td></tr>) : empty(5, address ? none : t.connect)}
-          </tbody></table></section>
+          </tbody></table></div></section>
         <section className="panel" aria-labelledby="fills-h"><h2 id="fills-h">{t.fills}</h2><div className="scroll"><table><thead><tr><th>{zh ? "时间" : "Time"}</th><th className="r">{t.price}</th><th>{zh ? "卖→买" : "Seller→Buyer"}</th><th>tx</th></tr></thead><tbody data-testid="fills">
-          {view?.fills.length ? view.fills.slice(0, 12).map((f) => <tr key={f.tx + f.seller + f.ts}><td>{Fmt.time(f.ts)}</td><td className="r up">{Fmt.n(f.price, 4)}</td><td className="mono">{f.seller.slice(0, 8)}→{f.buyer.slice(0, 8)}</td><td><a href={`https://bscscan.com/tx/${f.tx}`} target="_blank" rel="noreferrer">{f.tx.slice(0, 10)}</a></td></tr>) : empty(4, none)}
+          {view?.fills.length ? view.fills.slice(0, 12).map((f) => <tr key={f.tx + f.seller + f.ts}><td className="dim">{Fmt.time(f.ts)}</td><td className="r up">{Fmt.n(f.price, 4)}</td><td className="mono dim">{Fmt.addr(f.seller)} → {Fmt.addr(f.buyer)}</td><td><a href={`https://bscscan.com/tx/${f.tx}`} target="_blank" rel="noreferrer">{f.tx.slice(0, 10)}</a></td></tr>) : empty(4, none)}
         </tbody></table></div></section>
       </div>
     </>

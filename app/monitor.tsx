@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import { TopBar } from "@/components/shell";
 import { Fmt } from "@/lib/fmt";
 import { KLine } from "@/components/kline";
+import { TableState } from "@/components/ui";
 
 type Lang = "zh" | "en";
 type Asset = "relic" | "loom";
@@ -27,7 +28,6 @@ const DICT = {
 } as const;
 
 const SK = <span className="sk" />;
-const EMPTY = (cols: number) => <tr><td className="empty" colSpan={cols}>—</td></tr>;
 
 export default function Monitor() {
   const params = useSearchParams();
@@ -82,16 +82,16 @@ export default function Monitor() {
         <div className="card"><div className="k">{t.mintPrice}</div><div className="v">{m ? Fmt.n(m.paidBnb, 4) : SK}<small>BNB</small></div><div className="s">{t.first} {m?.firstBnb ?? "-"} · {t.paid} {m?.paidBnb ?? "-"} BNB</div></div>
       </div>
       <KLine key={asset} asset={asset} lang={lang} title={t.chart} />
-      {a ? <p className="muted" style={{ margin: "-4px 2px 0", fontSize: 12 }}>{t.vol} 1m {Fmt.n(a.volume.last1m.usdt)} · 5m {Fmt.n(a.volume.last5m.usdt)} · 15m {Fmt.n(a.volume.last15m.usdt)} · total {Fmt.n(a.volume.totalUsdt, 0)} USDT / {a.volume.totalFills}</p> : null}
+      {a ? <p className="vol">{t.vol} 1m {Fmt.n(a.volume.last1m.usdt)} · 5m {Fmt.n(a.volume.last5m.usdt)} · 15m {Fmt.n(a.volume.last15m.usdt)} · total {Fmt.n(a.volume.totalUsdt, 0)} USDT / {a.volume.totalFills}</p> : null}
       <div className="grid2">
-        <div className="panel"><h3>{t.book}</h3><div className="scroll"><table><thead><tr><th>{t.price}</th><th>{t.qty}</th><th>{t.total}</th><th>{t.buyer}</th><th>{t.time}</th></tr></thead>
-          <tbody>{a && !a.bids.length ? EMPTY(5) : null}{a?.bids.map((b) => <tr key={b.id}><td className="up">{Fmt.n(b.price, 4)}</td><td>{Fmt.n(b.qty, 0)}</td><td>{Fmt.n(b.total)}</td><td><a href={`https://bscscan.com/address/${b.buyer}`} target="_blank" rel="noreferrer">{Fmt.addr(b.buyer)}</a></td><td>{Fmt.time(b.ts)}</td></tr>)}</tbody></table></div></div>
-        <div className="panel"><h3>{t.fills}</h3><div className="scroll"><table><thead><tr><th>{t.time}</th><th>{t.price}</th><th>{t.buyer}</th><th>{t.seller}</th><th>tx</th></tr></thead>
-          <tbody>{a && !a.fills.length ? EMPTY(5) : null}{a?.fills.map((f) => <tr key={f.tx + f.ts + f.seller}><td>{Fmt.time(f.ts)}</td><td>{Fmt.n(f.price, 4)}</td><td>{Fmt.addr(f.buyer)}</td><td>{Fmt.addr(f.seller)}</td><td><a href={`https://bscscan.com/tx/${f.tx}`} target="_blank" rel="noreferrer">{f.tx.slice(0, 10)}</a></td></tr>)}</tbody></table></div></div>
+        <div className="panel"><h3>{t.book}</h3><div className="scroll"><table><thead><tr><th className="r">{t.price}</th><th className="r">{t.qty}</th><th className="r">{t.total}</th><th>{t.buyer}</th><th className="r">{t.time}</th></tr></thead>
+          <tbody>{TableState.of(a?.bids, 5, lang === "zh" ? "暂无买单" : "No open bids")}{a?.bids.map((b) => <tr key={b.id}><td className="r up">{Fmt.n(b.price, 4)}</td><td className="r">{Fmt.n(b.qty, 0)}</td><td className="r">{Fmt.n(b.total)}</td><td><a href={`https://bscscan.com/address/${b.buyer}`} target="_blank" rel="noreferrer">{Fmt.addr(b.buyer)}</a></td><td className="r dim">{Fmt.time(b.ts)}</td></tr>)}</tbody></table></div></div>
+        <div className="panel"><h3>{t.fills}</h3><div className="scroll"><table><thead><tr><th>{t.time}</th><th className="r">{t.price}</th><th>{t.buyer}</th><th>{t.seller}</th><th>tx</th></tr></thead>
+          <tbody>{TableState.of(a?.fills, 5, lang === "zh" ? "暂无成交" : "No fills yet")}{a?.fills.map((f) => <tr key={f.tx + f.ts + f.seller}><td className="dim">{Fmt.time(f.ts)}</td><td className="r up">{Fmt.n(f.price, 4)}</td><td>{Fmt.addr(f.buyer)}</td><td>{Fmt.addr(f.seller)}</td><td><a href={`https://bscscan.com/tx/${f.tx}`} target="_blank" rel="noreferrer">{f.tx.slice(0, 10)}</a></td></tr>)}</tbody></table></div></div>
       </div>
-      <div className="panel stack"><h3>{t.holders} 100 <span className="muted">({a?.holderCount ?? "-"})</span></h3><div className="scroll"><table><thead><tr><th>#</th><th>{t.addr}</th><th>{t.count}</th></tr></thead>
-        <tbody>{a && !a.holders.length ? EMPTY(3) : null}{a?.holders.map((h, i) => <tr key={h.address}><td>{i + 1}</td><td><a href={`https://bscscan.com/address/${h.address}`} target="_blank" rel="noreferrer">{h.address}</a></td><td>{h.count}</td></tr>)}</tbody></table></div></div>
-      <footer className="muted">{t.contract}: {snap ? Object.entries(snap.contracts).map(([k, v]) => <span key={k} style={{ marginRight: 12 }}>{k} <a className="mono" href={`https://bscscan.com/address/${v}`} target="_blank" rel="noreferrer">{Fmt.addr(v)}</a></span>) : "-"}</footer>
+      <div className="panel stack"><h3>{t.holders} 100 <span className="muted">({a?.holderCount ?? "-"})</span></h3><div className="scroll"><table><thead><tr><th className="r" style={{ width: 48 }}>#</th><th>{t.addr}</th><th className="r">{t.count}</th></tr></thead>
+        <tbody>{TableState.of(a?.holders, 3, lang === "zh" ? "暂无持仓" : "No holders yet")}{a?.holders.map((h, i) => <tr key={h.address}><td className="r dim">{i + 1}</td><td><a href={`https://bscscan.com/address/${h.address}`} target="_blank" rel="noreferrer"><span className="hide-sm">{h.address}</span><span className="show-sm">{Fmt.addr(h.address)}</span></a></td><td className="r">{Fmt.n(h.count, 0)}</td></tr>)}</tbody></table></div></div>
+      <footer className="muted">{t.contract}: {snap ? Object.entries(snap.contracts).map(([k, v]) => <span key={k}>{k} <a className="mono" href={`https://bscscan.com/address/${v}`} target="_blank" rel="noreferrer">{Fmt.addr(v)}</a></span>) : "-"}</footer>
       </main>
     </div>
   );

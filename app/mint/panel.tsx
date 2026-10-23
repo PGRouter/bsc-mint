@@ -102,7 +102,7 @@ function Mint({ lang }: { lang: Lang }) {
               {pay === "usdt" ? <><dt>{t.allowance}</dt><dd>{Fmt.units(allowance)}</dd><dt>{t.balance}</dt><dd>{Fmt.units(usdtBal)} USDT</dd></>
                 : <><dt>{t.gas}</dt><dd>{gas !== undefined ? `≈ ${Fmt.units(gas, 18, 6)} BNB` : "-"}</dd><dt>{t.balance}</dt><dd>{bnb ? Fmt.units(bnb.value, 18, 4) : "-"} BNB</dd></>}
             </dl>
-            {quoteErr ? <p className="err" role="alert" data-testid="quote-error">{lang === "zh" ? "链上预检失败" : "On-chain precheck reverted"}: {TxErrors.reason(quoteErr)}</p> : null}
+            {quoteErr ? <p className="step-err" role="alert" data-testid="quote-error">{lang === "zh" ? "链上预检失败" : "On-chain precheck reverted"}: {TxErrors.reason(quoteErr)}</p> : null}
             <div className="row">
               {pay === "usdt"
                 ? (needApprove ? <button className="btn primary" data-testid="approve" disabled={blocked} onClick={approve}>{t.approve}: {cost !== undefined ? formatUnits(cost, 18) : "-"} USDT</button>
